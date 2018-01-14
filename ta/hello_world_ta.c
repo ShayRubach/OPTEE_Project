@@ -45,8 +45,7 @@ char out[512] = {0};			// out buff
 char iv[16] = {0};				//instruction vector
 int iv_len = sizeof(iv);
 
-static int ALREADY_SET_PASSWORD = 0;
-static int isPasswordSet(void);
+
 /*
  * Called when the instance of the TA is created. This is the first call in
  * the TA.
@@ -154,9 +153,9 @@ static void myMemset(void* dest, char b, unsigned len)
 }
 
 static TEE_Result hashBufferWithSHA1(
-	int keyBuflen,
-	char* hashedKeyBuf,
-	uint32_t* hashedKeyLen){
+		int keyBuflen,
+		char* hashedKeyBuf,
+		uint32_t* hashedKeyLen){
 		TEE_Result ret;
 		TEE_OperationHandle hashedHandle = TEE_HANDLE_NULL;
 
@@ -183,6 +182,29 @@ static TEE_Result hashBufferWithSHA1(
 		return TEE_SUCCESS;
 	}
 
+
+static int createAndOpenObject(char* objID, size_t objID_len,
+																			uint32_t flags, char* data_buf, int size)
+	{
+		TEE_Result ret;
+
+		ret = TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE, (void *)objID, objID_len, flags, &object);
+		if (ret != TEE_SUCCESS)
+		{
+			EMSG("TEE_OpenPersistentObject failed.\n");
+			IMSG("Pre TEE_CreatePersistentObject\n");
+			ret = TEE_CreatePersistentObject(TEE_STORAGE_PRIVATE, (void *)objID, objID_len,
+											TEE_DATA_FLAG_ACCESS_WRITE_META,
+											(TEE_ObjectHandle)NULL, data_buf, size,
+											(TEE_ObjectHandle *)NULL);
+			ret = TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE, (void *)objID, objID_len, flags, &object);
+			return -1;
+		} else {
+			EMSG("TEE_OpenPersistentObject succeed!.\n");
+		}
+		return 1;
+}
+
 static int hashUserKey(uint32_t param_types, TEE_Param params[4])
 {
 	TEE_Result ret;
@@ -192,13 +214,13 @@ static int hashUserKey(uint32_t param_types, TEE_Param params[4])
 	uint32_t flags = TEE_DATA_FLAG_ACCESS_WRITE_META | TEE_DATA_FLAG_ACCESS_READ | TEE_DATA_FLAG_ACCESS_WRITE;
 	uint32_t read_bytes = 0,hashedKeyLen;
 	TEE_ObjectInfo info;
-	int status = 1, len,strLen;
+	int status = 1, len,strLen,result;
 
 	void* p;
 	params = params;
 	strLen = 0; strLen = strLen;
 	param_types = param_types;
-
+	IMSG("Entered: hashUserKey \n");
 	IMSG("params[1].memref.size= %d",params[1].memref.size);
 	keyBuf = TEE_Malloc(params[1].memref.size,0);
 	TEE_MemMove(keyBuf,(char*)(params[1].memref.buffer),params[1].memref.size);
@@ -208,54 +230,19 @@ static int hashUserKey(uint32_t param_types, TEE_Param params[4])
 
 	//TODO: Digest the buffer string here so it will be inserted to the persistent object encrypted already.
 	//start hash
+
+	result = createAndOpenObject(objID, objID_len, flags,keyBuf,16);
+	if(result == 1){
+		goto done;
+	}
+
 	hashBufferWithSHA1(strLen,hashedKeyBuf,&hashedKeyLen);
 
-	for (uint32_t i = 0; i < hashedKeyLen; ++i){
-		IMSG("i=%d , hashedKeyBuf[i]=%02x ",i, hashedKeyBuf[i]);
-		IMSG("\n");
-	}
-
-	//end hash
-
-
-	//allocate operation for hashing with mode digest, size of 128
-	// ret = TEE_AllocateOperation(&handle, TEE_ALG_AES_CBC_NOPAD, TEE_MODE_DIGEST, 128);
-	// if (ret != TEE_SUCCESS) {
-  //       IMSG("TEE_AllocateOperation returned (%08x).",ret);
-  //       TEE_FreeOperation(handle);
-  //       return ret;
-  // }
-  //
-	// TEE_DigestUpdate(handle,keyBuf,strLen);
-	// ret = TEE_DigestDoFinal(handle,keyBuf,strLen,hashedKeyBuf,&hashKeyLen);
-  // if(ret != TEE_SUCCESS) {
-	// 	TEE_FreeOperation(handle);
-	// 	return(ret);
+	// for (uint32_t i = 0; i < hashedKeyLen; ++i){
+	// 	IMSG("i=%d , hashedKeyBuf[i]=%02x ",i, hashedKeyBuf[i]);
+	// 	IMSG("\n");
 	// }
-	//end hash
 
-	IMSG("hashUserKey!!!\n");
-	//myMemcpy(buf, &strLen, sizeof(strLen));
-	//myMemcpy(buf + sizeof(int), (char*)buf, strLen);
-
-	IMSG("Pre TEE_CreatePersistentObject\n");
-	ret = TEE_CreatePersistentObject(TEE_STORAGE_PRIVATE, (void *)objID, objID_len,
-									TEE_DATA_FLAG_ACCESS_WRITE_META,
-									(TEE_ObjectHandle)NULL, keyBuf, 16,
-									(TEE_ObjectHandle *)NULL);
-
-	if (ret != TEE_SUCCESS)
-	{
-		EMSG("TEE_CreatePersistentObject failed.\n");
-		goto done;
-	}
-	ret = TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE,
-							       (void *)objID, objID_len, flags, &object);
-	if (ret != TEE_SUCCESS)
-	{
-		EMSG("TEE_OpenPersistentObject failed.\n");
-		goto done;
-	}
 	TEE_GetObjectInfo(object, &info);
 	ret = TEE_ReadObjectData(object, &len, sizeof(len), &read_bytes);
 	if (ret != TEE_SUCCESS)
@@ -279,8 +266,13 @@ static int hashUserKey(uint32_t param_types, TEE_Param params[4])
 done:
 	// TEE_CloseAndDeletePersistentObject(object);
 	// IMSG("Persistent Object has been delete.\n");
+	IMSG("Closing Persisten Object..\n");
+	TEE_CloseObject(object);
+
 	return status;
 }
+
+//TODO: make transient object and populate it with attribute? attach to key or somehjing
 
 static TEE_Result enc(uint32_t param_types, TEE_Param params[4]) {
 
@@ -360,6 +352,8 @@ static TEE_Result enc(uint32_t param_types, TEE_Param params[4]) {
 	res = TEE_CipherUpdate(handle,buf, sizeof(buf), out, &sz);
 	IMSG("TEE_CipherUpdate DONE\n");
 
+	//TODO : DO CIPHER DO FINAL INSTEAD OF CIPHER UPDATE!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 	IMSG("PRINTING ENCRYPTED DATA:\n");
 	for (i=0; i<sz; i++) {
 		IMSG("i = %d ,data=%x, ",i,out[i]);
@@ -380,12 +374,6 @@ static TEE_Result enc(uint32_t param_types, TEE_Param params[4]) {
  * comes from normal world.
  */
 
-static int isPasswordSet(void){
-	if(ALREADY_SET_PASSWORD > 0){
-		return 1;
-	}
-	else return 0;
-}
 
 TEE_Result TA_InvokeCommandEntryPoint(void __maybe_unused *sess_ctx,
 			uint32_t cmd_id,
@@ -394,24 +382,16 @@ TEE_Result TA_InvokeCommandEntryPoint(void __maybe_unused *sess_ctx,
 	(void)&sess_ctx; /* Unused parameter */
 
 
-
 	switch (cmd_id) {
+
 		case 1: //CRYPT_SET_PASS:
 
-			IMSG("is password set? : %d",ALREADY_SET_PASSWORD);
-			if(isPasswordSet()){
-				return TEE_SUCCESS;
-				IMSG("Key already set\n");
-			}
-
-			ALREADY_SET_PASSWORD = 1;
 			hashUserKey(param_types, params);
 			IMSG("OPERATION: Set password | buffer: \n");
 			for (uint32_t i = 0; i < params[1].memref.size; i++){
 				IMSG("i=%d , keyBuf[i]:%02x ", i,keyBuf[i]);
 				IMSG("\n");
 			}
-
 
 			return setPassword(param_types, params);
 		case 2: //CRYPT_ENCRYPT:
