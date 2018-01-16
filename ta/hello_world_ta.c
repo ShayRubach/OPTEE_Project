@@ -31,7 +31,7 @@
 #include <tee_internal_api_extensions.h>
 #include <string.h>
 #include "hello_world_ta.h"
-
+#define HASH_KEY_SIZE 16
 
 TEE_ObjectHandle p_storage_obj;
 TEE_ObjectHandle key;
@@ -233,52 +233,27 @@ static int hashUserKey(uint32_t param_types, TEE_Param params[4])
 	hashedKeyLen=20;
 	hashedKeyBuf = TEE_Malloc(hashedKeyLen, 0);
 
-	result = createAndOpenObject(objID, objID_len, flags,keyBuf,16);
+	hashBufferWithSHA1(strLen,hashedKeyBuf,&hashedKeyLen);
+
+	result = createAndOpenObject(objID, objID_len, flags,hashedKeyBuf,16);
 	if(result == 1){
 		goto done;
 	}
-
-	hashBufferWithSHA1(strLen,hashedKeyBuf,&hashedKeyLen);
-
-	// for (uint32_t i = 0; i < hashedKeyLen; ++i){
-	// 	IMSG("i=%d , hashedKeyBuf[i]=%02x ",i, hashedKeyBuf[i]);
-	// 	IMSG("\n");
-	// }
-
 	TEE_GetObjectInfo(object, &info);
-	// IMSG("TEE_ReadObjectData1 called.\n");
-	// ret = TEE_ReadObjectData(object, &len, sizeof(len), &read_bytes);
-	// if (ret != TEE_SUCCESS)
-	// {
-	// 	EMSG("TEE_ReadObjectData1 failed.\n");
-	// 	goto done;
-	// }
-	// IMSG("Got %d bytes of data:%d\n", read_bytes, len);
-	// p = TEE_Malloc(read_bytes, 0);
-	// if (p == NULL){
-	// 	IMSG("p is NULL.\n");
-	// 	goto done;
-	// }
-  //
-	// myMemset(p, 0, len);
-
-
-	p = TEE_Malloc(16, 0);
+	p = TEE_Malloc(HASH_KEY_SIZE, 0);
 
 	IMSG("TEE_ReadObjectData2 called.\n");
 	ret = TEE_ReadObjectData(object, p, 16, &read_bytes);
-	if (ret != TEE_SUCCESS)
-	{
+	if (ret != TEE_SUCCESS) {
 		EMSG("TEE_ReadObjectData2 failed.\n");
 		goto done;
 	}
 	EMSG("Got %d bytes of data:%s\n", read_bytes, (char*)p);
 	status = 0;
 
-	for (uint32_t i = 0; i < 20 ; ++i){
-		IMSG("HASHED KEY ====>  p[i]=%02x ", p[i]);
+	for (uint32_t i = 0; i < HASH_KEY_SIZE ; ++i){
+		IMSG("HASHED KEY ====>  p[%d]=%02x ",i, p[i]);
 	}
-
 
 done:
 	// TEE_CloseAndDeletePersistentObject(object);
