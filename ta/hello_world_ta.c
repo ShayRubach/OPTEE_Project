@@ -146,11 +146,11 @@ static TEE_Result show(uint32_t param_types, TEE_Param params[4]){
 // 		((char*)dest)[i] = ((char*)src)[i];
 // }
 
-static void myMemset(void* dest, char b, unsigned len)
-{
-	for (unsigned i = 0; i < len; ++i)
-		((char*)dest)[i] = b;
-}
+// static void myMemset(void* dest, char b, unsigned len)
+// {
+// 	for (unsigned i = 0; i < len; ++i)
+// 		((char*)dest)[i] = b;
+// }
 
 static TEE_Result hashBufferWithSHA1(
 		int keyBuflen,
@@ -183,21 +183,25 @@ static TEE_Result hashBufferWithSHA1(
 	}
 
 
-static int createAndOpenObject(char* objID, size_t objID_len,
-																			uint32_t flags, char* data_buf, int size)
+static int createAndOpenObject(char* objID, size_t objID_len, uint32_t flags, char* data_buf, int size)
 	{
 		TEE_Result ret;
 
 		ret = TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE, (void *)objID, objID_len, flags, &object);
 		if (ret != TEE_SUCCESS)
 		{
-			EMSG("TEE_OpenPersistentObject failed.\n");
 			IMSG("Pre TEE_CreatePersistentObject\n");
-			ret = TEE_CreatePersistentObject(TEE_STORAGE_PRIVATE, (void *)objID, objID_len,
+			EMSG("TEE_OpenPersistentObject failed.\n");
+			ret = TEE_CreatePersistentObject(TEE_STORAGE_PRIVATE,
+											(void *)objID, objID_len,
 											TEE_DATA_FLAG_ACCESS_WRITE_META,
-											(TEE_ObjectHandle)NULL, data_buf, size,
+											TEE_HANDLE_NULL, data_buf, size,
 											(TEE_ObjectHandle *)NULL);
-			ret = TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE, (void *)objID, objID_len, flags, &object);
+			EMSG("Pre TEE_CreatePersistentObject RET VALUE: %u",ret);
+			ret = TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE,
+																		(void *)objID, objID_len,
+																		flags, &object);
+			EMSG("Pre TEE_OpenPersistentObject RET VALUE: %u",ret);
 			return -1;
 		} else {
 			EMSG("TEE_OpenPersistentObject succeed!.\n");
@@ -214,9 +218,10 @@ static int hashUserKey(uint32_t param_types, TEE_Param params[4])
 	uint32_t flags = TEE_DATA_FLAG_ACCESS_WRITE_META | TEE_DATA_FLAG_ACCESS_READ | TEE_DATA_FLAG_ACCESS_WRITE;
 	uint32_t read_bytes = 0,hashedKeyLen;
 	TEE_ObjectInfo info;
-	int status = 1, len,strLen,result;
+	int status = 1, len = 0,strLen,result;
 
-	void* p;
+	char* p;
+	len = len;
 	params = params;
 	strLen = 0; strLen = strLen;
 	param_types = param_types;
@@ -227,9 +232,6 @@ static int hashUserKey(uint32_t param_types, TEE_Param params[4])
 	strLen = params[1].memref.size;
 	hashedKeyLen=20;
 	hashedKeyBuf = TEE_Malloc(hashedKeyLen, 0);
-
-	//TODO: Digest the buffer string here so it will be inserted to the persistent object encrypted already.
-	//start hash
 
 	result = createAndOpenObject(objID, objID_len, flags,keyBuf,16);
 	if(result == 1){
@@ -244,18 +246,27 @@ static int hashUserKey(uint32_t param_types, TEE_Param params[4])
 	// }
 
 	TEE_GetObjectInfo(object, &info);
-	ret = TEE_ReadObjectData(object, &len, sizeof(len), &read_bytes);
-	if (ret != TEE_SUCCESS)
-	{
-		EMSG("TEE_ReadObjectData1 failed.\n");
-		goto done;
-	}
-	IMSG("Got %d bytes of data:%d\n", read_bytes, len);
-	p = TEE_Malloc(len + 1, 0);
-	if (p == NULL)
-		goto done;
-	myMemset(p, 0, len);
-	ret = TEE_ReadObjectData(object, p, len, &read_bytes);
+	// IMSG("TEE_ReadObjectData1 called.\n");
+	// ret = TEE_ReadObjectData(object, &len, sizeof(len), &read_bytes);
+	// if (ret != TEE_SUCCESS)
+	// {
+	// 	EMSG("TEE_ReadObjectData1 failed.\n");
+	// 	goto done;
+	// }
+	// IMSG("Got %d bytes of data:%d\n", read_bytes, len);
+	// p = TEE_Malloc(read_bytes, 0);
+	// if (p == NULL){
+	// 	IMSG("p is NULL.\n");
+	// 	goto done;
+	// }
+  //
+	// myMemset(p, 0, len);
+
+
+	p = TEE_Malloc(16, 0);
+
+	IMSG("TEE_ReadObjectData2 called.\n");
+	ret = TEE_ReadObjectData(object, p, 16, &read_bytes);
 	if (ret != TEE_SUCCESS)
 	{
 		EMSG("TEE_ReadObjectData2 failed.\n");
@@ -263,6 +274,12 @@ static int hashUserKey(uint32_t param_types, TEE_Param params[4])
 	}
 	EMSG("Got %d bytes of data:%s\n", read_bytes, (char*)p);
 	status = 0;
+
+	for (uint32_t i = 0; i < 20 ; ++i){
+		IMSG("HASHED KEY ====>  p[i]=%02x ", p[i]);
+	}
+
+
 done:
 	// TEE_CloseAndDeletePersistentObject(object);
 	// IMSG("Persistent Object has been delete.\n");
