@@ -32,18 +32,21 @@
 #include <string.h>
 #include "hello_world_ta.h"
 #define HASH_KEY_SIZE 16
-
+#define CREATE_AND_OPEN 1
+#define OPEN_ONLY				2
+#define FILE_PATH 			"96c5d1b260aa4de30fedaf67e5b9227613abebff172a2b4e949994b8e561e2fb"
 TEE_ObjectHandle p_storage_obj;
 TEE_ObjectHandle key;
-TEE_Result res;
 TEE_ObjectHandle object;	//persistent object holding the enc key
 TEE_OperationHandle handle = TEE_HANDLE_NULL;
+TEE_Result res;
 TEE_ObjectInfo key_info = {0};
 char buf[512] = {0};			// in buff
 char* keyBuf;
 char out[512] = {0};			// out buff
 char iv[16] = {0};				//instruction vector
 int iv_len = sizeof(iv);
+
 
 
 /*
@@ -111,13 +114,6 @@ void TA_CloseSessionEntryPoint(void __maybe_unused *sess_ctx)
 }
 
 
-static TEE_Result dec(uint32_t param_types, TEE_Param params[4]) {
-	param_types = param_types;
-	params = params;
-
-	return TEE_SUCCESS;
-}
-
 static TEE_Result setPassword(uint32_t param_types, TEE_Param params[4]) {
 	param_types = param_types;
 	params = params;
@@ -183,13 +179,12 @@ static TEE_Result hashBufferWithSHA1(
 	}
 
 
-static int createAndOpenObject(char* objID, size_t objID_len, uint32_t flags, char* data_buf, int size)
+static int createAndOpenObject(char* objID, size_t objID_len, uint32_t flags, char* data_buf, int size,int MODE)
 	{
 		TEE_Result ret;
 
 		ret = TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE, (void *)objID, objID_len, flags, &object);
-		if (ret != TEE_SUCCESS)
-		{
+		if (ret != TEE_SUCCESS && MODE == CREATE_AND_OPEN) {
 			IMSG("Pre TEE_CreatePersistentObject\n");
 			EMSG("TEE_OpenPersistentObject failed.\n");
 			ret = TEE_CreatePersistentObject(TEE_STORAGE_PRIVATE,
@@ -203,7 +198,11 @@ static int createAndOpenObject(char* objID, size_t objID_len, uint32_t flags, ch
 																		flags, &object);
 			EMSG("Pre TEE_OpenPersistentObject RET VALUE: %u",ret);
 			return -1;
-		} else {
+		}
+		else if(ret != TEE_SUCCESS && MODE == OPEN_ONLY){
+				EMSG("TEE_OpenPersistentObject failed!!!!! you did not generate a key.\n");
+		}
+		else {
 			EMSG("TEE_OpenPersistentObject succeed!.\n");
 		}
 		return 1;
@@ -235,7 +234,7 @@ static int hashUserKey(uint32_t param_types, TEE_Param params[4])
 
 	hashBufferWithSHA1(strLen,hashedKeyBuf,&hashedKeyLen);
 
-	result = createAndOpenObject(objID, objID_len, flags,hashedKeyBuf,16);
+	result = createAndOpenObject(objID, objID_len, flags,hashedKeyBuf,16,CREATE_AND_OPEN);
 	if(result == 1){
 		goto done;
 	}
@@ -264,8 +263,101 @@ done:
 	return status;
 }
 
+
+
+static TEE_Result dec(uint32_t param_types, TEE_Param params[4]) {
+	uint32_t sz = sizeof(out);
+	uint32_t i;
+	char hashedKeyBuf[16];
+	int result;
+	size_t objID_len = 64;
+	char objID[] = FILE_PATH;
+	uint32_t flags = TEE_DATA_FLAG_ACCESS_WRITE_META | TEE_DATA_FLAG_ACCESS_READ | TEE_DATA_FLAG_ACCESS_WRITE;
+	param_types = param_types;
+	params = params;
+
+	// try to print that raw data
+	IMSG("i received:%s\n",(char*)(params[1].memref.buffer));
+
+	//change buffer content
+	TEE_MemMove(buf,(char*)(params[1].memref.buffer),params[1].memref.size);
+
+	//now we need to allocate shared memory to write to the client!!
+	param_types = param_types;
+	params = params;
+	buf[0] = buf[0];
+
+
+	result = createAndOpenObject(objID, objID_len, flags,hashedKeyBuf,16,OPEN_ONLY);
+	if(result != 1){
+		IMSG("Couldn't open object!");
+		return TEE_ERROR_ITEM_NOT_FOUND;
+	}
+
+	IMSG("TEE_AllocateTransientObject\n");
+	res = TEE_AllocateTransientObject(TEE_TYPE_AES, 128, &object);
+	if (res != TEE_SUCCESS) {
+        IMSG("TEE_AllocateTransientObject returned (%08x).",res);
+        return res;
+    }
+
+	IMSG("TEE_AllocateOperation\n");
+	res = TEE_AllocateOperation(&handle, TEE_ALG_AES_CBC_NOPAD, TEE_MODE_DECRYPT, 128);
+	if (res != TEE_SUCCESS) {
+        IMSG("TEE_AllocateOperation returned (%08x).",res);
+        TEE_FreeTransientObject(object);
+        return res;
+  }
+
+  //sanity print
+  IMSG("AES decryption operation allocated\n");
+
+	IMSG("TEE_SetOperationKey\n");
+	res = TEE_SetOperationKey(handle,object);
+	if (res != TEE_SUCCESS) {
+		IMSG("TEE_SetOperationKey returned (%08x).",res);
+		return res;
+  }
+
+  //sanity check
+	IMSG("key operation key set!\n");
+
+	IMSG("TEE_CipherInit\n");
+	//encrypt the data
+	TEE_CipherInit(handle,iv,iv_len);
+	if (res != TEE_SUCCESS) {
+	    IMSG("TEE_CipherInit returned (%08x).",res);
+	    return res;
+	}
+	IMSG("AES initialized\n");
+
+	sz = sizeof(out);
+
+	IMSG("TEE_CipherUpdate START\n");
+	res = TEE_CipherUpdate(handle,buf, sizeof(buf), out, &sz);
+	IMSG("TEE_CipherUpdate DONE\n");
+
+
+
+	//TODO : DO CIPHER DO FINAL INSTEAD OF CIPHER UPDATE!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+	IMSG("PRINTING ENCRYPTED DATA:\n");
+	for (i=0; i<sz; i++) {
+		IMSG("i = %d ,data=%x, ",i,out[i]);
+	}
+
+	//TODO: send the information to the back to the NT
+
+	TEE_FreeOperation(handle);
+	TEE_FreeTransientObject(key);
+
+	return TEE_SUCCESS;
+}
+
+
 //TODO: make transient object and populate it with attribute? attach to key or somehjing
 
+/* print
 static TEE_Result enc(uint32_t param_types, TEE_Param params[4]) {
 
 	uint32_t sz = sizeof(out);
@@ -340,27 +432,142 @@ static TEE_Result enc(uint32_t param_types, TEE_Param params[4]) {
 
 	sz = sizeof(out);
 
-	IMSG("TEE_CipherUpdate START\n");
-	res = TEE_CipherUpdate(handle,buf, sizeof(buf), out, &sz);
-	IMSG("TEE_CipherUpdate DONE\n");
-
-	//TODO : DO CIPHER DO FINAL INSTEAD OF CIPHER UPDATE!!!!!!!!!!!!!!!!!!!!!!!!!!
+	IMSG("TEE_CipherDoFinal START\n");
+	res = TEE_CipherDoFinal(handle,buf, sizeof(buf), out, &sz);
+	IMSG("TEE_CipherDoFinal DONE\n");
 
 	IMSG("PRINTING ENCRYPTED DATA:\n");
 	for (i=0; i<sz; i++) {
 		IMSG("i = %d ,data=%x, ",i,out[i]);
 	}
 
-	//TODO: send the information to the back to the NT
+	//TODO: throw data back to the userfile
 
 	TEE_FreeOperation(handle);
 	TEE_FreeTransientObject(key);
 
 	return TEE_SUCCESS;
 }
+*/
+
+static TEE_Result encryptWithPrivateKey(uint32_t param_types, TEE_Param params[4]) {
+
+	int result;
+	uint32_t i,read_bytes;
+	TEE_Attribute aesAttributes;
+	char* hashedKeyBuf = NULL;
+	uint32_t sz = 16;
+	size_t objID_len = 64;
+
+	char objID[] = FILE_PATH;
+	uint32_t flags = TEE_DATA_FLAG_ACCESS_WRITE_META | TEE_DATA_FLAG_ACCESS_READ | TEE_DATA_FLAG_ACCESS_WRITE;
+	param_types = param_types;
+	params = params;
+	object = TEE_HANDLE_NULL;
 
 
-/*
+	// try to print that raw data
+	IMSG("i received:%s\n",(char*)(params[1].memref.buffer));
+
+	//change buffer content
+	TEE_MemMove(buf,(char*)(params[1].memref.buffer),params[1].memref.size);
+
+	//now we need to allocate shared memory to write to the client!!
+	param_types = param_types;
+	params = params;
+	buf[0] = buf[0];
+
+
+
+	//encryot the 16byte chunk and put it on hashedKeyBuf
+	result = createAndOpenObject(objID, objID_len, flags,NULL,16,OPEN_ONLY);
+	if(result != 1){
+		IMSG("Couldn't open object!");
+		return TEE_ERROR_ITEM_NOT_FOUND;
+	}
+
+	if(hashedKeyBuf != NULL){
+		TEE_Free(hashedKeyBuf);
+	}
+	hashedKeyBuf = TEE_Malloc(16, 0);
+	IMSG("TEE_ReadObjectData called.\n");
+	result = TEE_ReadObjectData(object, hashedKeyBuf, 16, &read_bytes);
+	if (result != TEE_SUCCESS) {
+		EMSG("TEE_ReadObjectData  failed.\n");
+	}
+
+	//set attribute vals
+	aesAttributes.attributeID = TEE_ATTR_SECRET_VALUE;
+	aesAttributes.content.ref.buffer = hashedKeyBuf;
+	aesAttributes.content.ref.length = sizeof(hashedKeyBuf);
+
+	TEE_ResetTransientObject(key);
+	IMSG("TEE_AllocateTransientObject\n");
+	res = TEE_AllocateTransientObject(TEE_TYPE_AES, 128, &key);
+	if (res != TEE_SUCCESS) {
+        IMSG("TEE_AllocateTransientObject returned (%08x).",res);
+        return res;
+  }
+
+	result = TEE_PopulateTransientObject(key, (TEE_Attribute *)&aesAttributes, 1);
+
+
+	IMSG("TEE_GetObjectInfo\n");
+    TEE_GetObjectInfo(key, &key_info);
+
+
+	IMSG("TEE_AllocateOperation\n");
+	res = TEE_AllocateOperation(&handle, TEE_ALG_AES_CBC_NOPAD, TEE_MODE_ENCRYPT, 128);
+	if (res != TEE_SUCCESS) {
+        IMSG("TEE_AllocateOperation returned (%08x).",res);
+        TEE_FreeTransientObject(key);
+        return res;
+  }
+
+  //sanity
+  IMSG("AES operation allocated\n");
+
+	IMSG("TEE_SetOperationKey called.\n");
+	res = TEE_SetOperationKey(handle,key);
+	if (res != TEE_SUCCESS) {
+		IMSG("TEE_SetOperationKey returned (%08x).",res);
+		return res;
+  }
+	IMSG("TEE_SetOperationKey finished.\n");
+
+  //sanity
+	IMSG("key operation key set!\n");
+
+	IMSG("TEE_CipherInit\n");
+	//encrypt the data
+	TEE_CipherInit(handle,iv,iv_len);
+	if (res != TEE_SUCCESS) {
+	    IMSG("TEE_CipherInit returned (%08x).",res);
+	    return res;
+	}
+	IMSG("AES initialized\n");
+
+	sz = sizeof(out);
+
+	IMSG("TEE_CipherDoFinal START\n");
+	res = TEE_CipherDoFinal(handle,hashedKeyBuf, sizeof(hashedKeyBuf), out, &sz);
+	IMSG("TEE_CipherDoFinal DONE\n");
+
+	IMSG("PRINTING ENCRYPTED DATA:\n");
+	for (i=0; i<sz; i++) {
+		IMSG("i = %d ,data=%x, ",i,out[i]);
+	}
+
+	//TODO: throw data back to the userfile
+
+	TEE_FreeOperation(handle);
+	TEE_FreeTransientObject(key);
+	TEE_CloseObject(object);
+
+	return TEE_SUCCESS;
+}
+
+/* int
  * Called when a TA is invoked. sess_ctx hold that value that was
  * assigned by TA_OpenSessionEntryPoint(). The rest of the paramters
  * comes from normal world.
@@ -388,7 +595,8 @@ TEE_Result TA_InvokeCommandEntryPoint(void __maybe_unused *sess_ctx,
 			return setPassword(param_types, params);
 		case 2: //CRYPT_ENCRYPT:
 			IMSG("OPERATION: encrypt | buffer: %s\n",buf);
-			return enc(param_types, params);
+			return encryptWithPrivateKey(param_types,params);
+			//return enc(param_types, params);
 		case 3: //CRYPT_DECRYPT:
 			IMSG("OPERATION: decrypt | buffer: %s\n",buf);
 			return dec(param_types, params);
@@ -396,6 +604,7 @@ TEE_Result TA_InvokeCommandEntryPoint(void __maybe_unused *sess_ctx,
 			IMSG("OPERATION: show() | buffer: %s\n",buf);
 			return show(param_types, params);
 		default:
+
 			IMSG("OPERATION: TEE_ERROR_BAD_PARAMETERS | buffer: %s\n",buf);
 			return TEE_ERROR_BAD_PARAMETERS;
 	}

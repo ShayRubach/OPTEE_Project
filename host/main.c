@@ -77,7 +77,7 @@ int main(int argc, char *argv[])
 
 	switch (atoi(argv[1])) {
 		case 1:	//set password
-			
+
 			COMMAND_TYPE = 1;
 			printf("case 1, argv[2]: %s\n",argv[2]);
 			break;
