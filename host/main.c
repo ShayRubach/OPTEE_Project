@@ -34,20 +34,28 @@
 /* To the the UUID (found the the TA's h-file(s)) */
 #include <hello_world_ta.h>
 
-#define UINT_BLOCK_SIZE			16;
-// #define CRYPT_SET_PASS			0;
-// #define CRYPT_ENCRYPT				1;
-// #define CRYPT_DECRYPT				2;
-// #define CRYPT_SHOW					3;
+#define UINT_BLOCK_SIZE		(16)
+#define LIGHT_FILE_MODE 	(1)
+#define HEAVY_FILE_MODE 	(2)
+#define CHUNK_SIZE				(16)
 
-static uint32_t fixed_block_size = 0;
+static FILE* fd = NULL;
+static const char* lightFilePath = "lightFile";
+static const char* heavyFilePath = "heavyFile";
 
 static void validateArgs(int argc);
 static void show();
+static FILE* openFile(const char* filePath,const char* mode);
+static int closeFile(FILE* fd);
+static void fillFilesWithData();
+static char* allocateBuf(char* buf,char* argv ,size_t size);
+
+static char* test = "Both wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper object. 	DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA  ote that tabs and spaces are both treated as whitespace, but they are not equal: the lines are considered to have no common leading whitespace. (This behaviour is new in Python 2.5; older versions of this module incorrectly expanded tabs before searching for common leading whitespace.) Both wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper objectBoth wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper object. 	DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA  ote that tabs and spaces are both treated as whitespace, but they are not equal: the lines are considered to have no common leading whitespace. (This behaviour is new in Python 2.5; older versions of this module incorrectly expanded tabs before searching for common leading whitespace.) Both wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper objectBoth wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper object. 	DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA  ote that tabs and spaces are both treated as whitespace, but they are not equal: the lines are considered to have no common leading whitespace. (This behaviour is new in Python 2.5; older versions of this module incorrectly expanded tabs before searching for common leading whitespace.) Both wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper object\n";
 
 
 int main(int argc, char *argv[])
 {
+	char line[512];
 	char* buf = NULL;
 	TEEC_Result res;
 	TEEC_Context ctx;
@@ -60,37 +68,46 @@ int main(int argc, char *argv[])
 
 	validateArgs(argc);
 
-	while(fixed_block_size < strlen(argv[2])+1){
-		fixed_block_size += UINT_BLOCK_SIZE;
-	}
+	// injecting some random data to local env files to later be enc/dec
+	fillFilesWithData();
 
-	buf = malloc(sizeof(char)*fixed_block_size);
+	// while(fixed_block_size < strlen(argv[2])+1){
+	// 	fixed_block_size += UINT_BLOCK_SIZE;
+	// }
 
-	if( buf == NULL || sizeof(buf) < sizeof(argv[2])){
-			printf("failed to allocate 'buf' or size is smaller than argv[2]\n");
-			return -1;
-	}
 
-	memset(buf,0,sizeof(fixed_block_size));
-	strncpy(buf,argv[2],strlen(argv[2]));
+	buf = allocateBuf(buf,argv[2],CHUNK_SIZE);
+	if(NULL == buf)
+		return -1;
 
 
 	switch (atoi(argv[1])) {
 		case 1:	//set password
-
 			COMMAND_TYPE = 1;
-			printf("case 1, argv[2]: %s\n",argv[2]);
+			printf("case : %s\n",argv[2]);
 			break;
 
 		case 2: //pass a msg
 			COMMAND_TYPE = 2;
-			//strlen(argv[2])+1 + 15 AND zero on 4 most right bits
+			printf("case : %s\n",argv[2]);
+			fd = openFile(lightFilePath,"a+");
+
+			//sanity print file
+			if(fd != NULL){
+				while(fgets(line,512,fd)){
+					printf("%s\n", line);
+				}
+		  }
+
+			//writeEncDataToFile(fd,readBytes,seekStart,buf);
+			closeFile(fd);
 
 			break;
 
 		case 3:	//invoke show()
 			COMMAND_TYPE = 3;
 			printf("case 3, argv[2]: %s\n",argv[2]);
+
 			show();
 			break;
 		default:
@@ -98,75 +115,36 @@ int main(int argc, char *argv[])
 			break;
 	}
 
-
 	/* init shared memory */
 	shared_mem.buffer = buf;
-	if(COMMAND_TYPE == 1){
-		shared_mem.size = strlen(buf);
-		printf("shared_mem.size = strlen(buf) = %zu\n",shared_mem.size );
-	}
-	else{
-		shared_mem.size = sizeof(buf);
-		printf("shared_mem.size = sizeof(buf) = %zu\n",shared_mem.size );
-	}
+	shared_mem.size = sizeof(buf);
 	shared_mem.flags = TEEC_MEM_INPUT;
+
+	printf("buf=%s , shared_mem.buffer = %s\nshared_mem.size = %lu",(char*)buf,(char*)shared_mem.buffer,shared_mem.size );
 
 	/* Initialize a context connecting us to the TEE */
 	res = TEEC_InitializeContext(NULL, &ctx);
-
-	if (res != TEEC_SUCCESS)
+	if ( res != TEEC_SUCCESS)
 		errx(1, "TEEC_InitializeContext failed with code 0x%x", res);
 
-	/*
-	 * Open a session to the "hello world" TA, the TA will print "hello
-	 * world!" in the log when the session is created.
-	 */
 	res = TEEC_OpenSession(&ctx, &sess, &uuid, TEEC_LOGIN_PUBLIC, NULL, NULL, &err_origin);
-	if (res != TEEC_SUCCESS)
+	if(res != TEEC_SUCCESS)
 		errx(1, "TEEC_Opensession failed with code 0x%x origin 0x%x", res, err_origin);
-
-	/*
-	 * Execute a function in the TA by invoking it, in this case
-	 * we're incrementing a number.
-	 *
-	 * The value of command ID part and how the parameters are
-	 * interpreted is part of the interface provided by the TA.
-	 */
 
 	/* Clear the TEEC_Operation struct */
 	memset(&op, 0, sizeof(op));
 
-	/*
-	 * Prepare the argument. Pass a value in the first parameter,
-	 * the remaining three parameters are unused.
-	 */
-
 	op.paramTypes = TEEC_PARAM_TYPES(TEEC_VALUE_INOUT, TEEC_MEMREF_WHOLE, TEEC_NONE, TEEC_NONE);
-
 	//init memref_whole parameter
 	op.params[1].memref.parent = &shared_mem;
 	op.params[1].memref.size = shared_mem.size;
 	op.params[1].memref.offset = 0;
 
-
-	/* register the shared mem */
 	TEEC_RegisterSharedMemory(&ctx,&shared_mem);
 
 	res = TEEC_InvokeCommand(&sess, COMMAND_TYPE, &op, &err_origin);
-
 	if (res != TEEC_SUCCESS)
 		errx(1, "TEEC_InvokeCommand failed with code 0x%x origin 0x%x", res, err_origin);
-
-	// printf("buf has now changed to: %s\n",buf);
-	// printf("Encryption succeed!\n");
-
-	/*
-	 * We're done with the TA, close the session and
-	 * destroy the context.
-	 *
-	 * The TA will print "Goodbye!" in the log when the
-	 * session is closed.
-	 */
 
 	TEEC_ReleaseSharedMemory(&shared_mem);
 	TEEC_CloseSession(&sess);
@@ -182,7 +160,71 @@ static void validateArgs(int argc){
 	}
 }
 
-static void show(){
+static FILE* openFile(const char* filePath,const char* mode){
 
+	printf("opening file %s , with mode: %s\n",filePath,mode);
+	fd = fopen(filePath,mode);
+	if(fd != NULL)
+		printf("file opened successfully.\n");
+	else
+		printf("failed to open file.\n");
+	return fd;
+}
+
+static int closeFile(FILE* fd){
+	int ret = -1;
+	printf("closing file.\n");
+	if(fd != NULL)
+		ret = fclose(fd);
+	if(ret == 0)
+		printf("successfully closed file.\n");
+	else
+		printf("failed to close file.\n");
+	return ret;
+}
+
+static void show(){
+	printf("show() called\n");
 	return;
+}
+
+static int isFileEmpty(){
+	int size;
+	fseek (fd, 0, SEEK_END);
+	size = ftell(fd);
+	if (0 == size) {
+		printf("file is empty\n");
+		return 1;
+	}
+	return 0;
+}
+
+static void fillFilesWithData(){
+	fd = openFile(lightFilePath,"a+");
+	if(1 == isFileEmpty(fd)){
+		printf("filling file '%s' with random data\n",lightFilePath );
+		fprintf(fd,"%s",test);
+	}
+	closeFile(fd);
+
+	fd = openFile(heavyFilePath,"a+");
+	if(1 == isFileEmpty(fd)){
+		printf("filling file '%s' with random data\n",heavyFilePath );
+		fprintf(fd,"%s",test);
+	}
+	closeFile(fd);
+}
+
+static char* allocateBuf(char* buf,char* argv ,size_t size) {
+		printf("%s called. argv = %s , size = %lu\n",__FUNCTION__,argv,size);
+		buf = (char*)malloc(size);
+		if(buf == NULL){
+			printf("failed to allocate 'buf'\n");
+		}
+		else{
+			memset(buf,0,size);
+			strncpy(buf,argv,strlen(argv));
+		}
+		printf("buf=%s\n",buf );
+		return buf;
 }
