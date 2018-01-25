@@ -110,15 +110,6 @@ TEE_Result TA_OpenSessionEntryPoint(uint32_t param_types,
 void TA_CloseSessionEntryPoint(void __maybe_unused *sess_ctx)
 {
 	(void)&sess_ctx; /* Unused parameter */
-	IMSG("Goooooooooooooodbye!\n");
-}
-
-
-static TEE_Result setPassword(uint32_t param_types, TEE_Param params[4]) {
-	param_types = param_types;
-	params = params;
-
-	return TEE_SUCCESS;
 }
 
 static TEE_Result show(uint32_t param_types, TEE_Param params[4]){
@@ -129,24 +120,6 @@ static TEE_Result show(uint32_t param_types, TEE_Param params[4]){
 	return TEE_SUCCESS;
 }
 
-// static int myStrlen(const char* m)
-// {
-// 	int c;
-// 	for (c = 0; *m; ++c, ++m);
-// 	return c;
-// }
-
-// static void myMemcpy(void* dest, void* src, unsigned len)
-// {
-// 	for (unsigned i = 0; i < len; ++i)
-// 		((char*)dest)[i] = ((char*)src)[i];
-// }
-
-// static void myMemset(void* dest, char b, unsigned len)
-// {
-// 	for (unsigned i = 0; i < len; ++i)
-// 		((char*)dest)[i] = b;
-// }
 
 static TEE_Result hashBufferWithSHA1(
 		int keyBuflen,
@@ -162,10 +135,10 @@ static TEE_Result hashBufferWithSHA1(
 	        return ret;
 	  }
 
-		IMSG("BEFORE DIGEST DO FINAL");
-		for(int i=0 ; i < keyBuflen ; i++){
-			IMSG("keyBuf[i] = %02x",keyBuf[i]);
-		}
+		// IMSG("BEFORE DIGEST DO FINAL");
+		// for(int i=0 ; i < keyBuflen ; i++){
+		// 	IMSG("keyBuf[i] = %02x",keyBuf[i]);
+		// }
 		//TEE_DigestUpdate(hashedHandle,keyBuf,keyBuflen);
 		ret = TEE_DigestDoFinal(hashedHandle,keyBuf,keyBuflen,hashedKeyBuf,hashedKeyLen);
 	  if(ret != TEE_SUCCESS) {
@@ -199,8 +172,13 @@ static int createAndOpenObject(char* objID, size_t objID_len, uint32_t flags, ch
 			EMSG("Pre TEE_OpenPersistentObject RET VALUE: %u",ret);
 			return -1;
 		}
+		if (ret == TEE_SUCCESS && MODE == CREATE_AND_OPEN) {
+			EMSG("Key already set!\n");
+			return -2;
+		}
 		else if(ret != TEE_SUCCESS && MODE == OPEN_ONLY){
-				EMSG("TEE_OpenPersistentObject failed!!!!! you did not generate a key.\n");
+				EMSG("Generate a key first.\n");
+				return 0;
 		}
 		else {
 			EMSG("TEE_OpenPersistentObject succeed!.\n");
@@ -217,7 +195,7 @@ static int hashUserKey(uint32_t param_types, TEE_Param params[4])
 	uint32_t flags = TEE_DATA_FLAG_ACCESS_WRITE_META | TEE_DATA_FLAG_ACCESS_READ | TEE_DATA_FLAG_ACCESS_WRITE;
 	uint32_t read_bytes = 0,hashedKeyLen;
 	TEE_ObjectInfo info;
-	int status = 1, len = 0,strLen,result;
+	int status = 0, len = 0,strLen,result;
 
 	char* p;
 	len = len;
@@ -235,9 +213,11 @@ static int hashUserKey(uint32_t param_types, TEE_Param params[4])
 	hashBufferWithSHA1(strLen,hashedKeyBuf,&hashedKeyLen);
 
 	result = createAndOpenObject(objID, objID_len, flags,hashedKeyBuf,16,CREATE_AND_OPEN);
-	if(result == 1){
+	if(result != -1){
+		status = -1;
 		goto done;
 	}
+
 	TEE_GetObjectInfo(object, &info);
 	p = TEE_Malloc(HASH_KEY_SIZE, 0);
 
@@ -248,7 +228,6 @@ static int hashUserKey(uint32_t param_types, TEE_Param params[4])
 		goto done;
 	}
 	EMSG("Got %d bytes of data:%s\n", read_bytes, (char*)p);
-	status = 0;
 
 	for (uint32_t i = 0; i < HASH_KEY_SIZE ; ++i){
 		IMSG("HASHED KEY ====>  p[%d]=%02x ",i, p[i]);
@@ -287,7 +266,7 @@ static TEE_Result decryptWithPrivateKey(uint32_t param_types, TEE_Param params[4
 		param_types = param_types;
 		params = params;
 		object = TEE_HANDLE_NULL;
-
+		i =0;i=i;
 		TEE_MemFill((char*)hashedKeyBuf,0,hkbSize);
 
 		IMSG("createAndOpenObject called.\n");
@@ -340,18 +319,18 @@ static TEE_Result decryptWithPrivateKey(uint32_t param_types, TEE_Param params[4
 		//sz = sizeof(out);
 		sz= 16;
 
-		IMSG("PRINTING CLEAR DATA:\n");
-		for (i=0; i< 16; i++) {
-			IMSG("i = %d ,clear data=%x, ",i,((char*)params[1].memref.buffer)[i]);
-		}
+		// IMSG("PRINTING CLEAR DATA:\n");
+		// for (i=0; i< 16; i++) {
+		// 	IMSG("i = %d ,clear data=%x, ",i,((char*)params[1].memref.buffer)[i]);
+		// }
 
 		IMSG("TEE_CipherDoFinal called.\n");
 		TEE_CipherDoFinal(handle,params[1].memref.buffer,16,params[1].memref.buffer,&(sz));
 
-		IMSG("PRINTING ENCRYPTED DATA:\n");
-		for (i=0; i< 16; i++) {
-			IMSG("i = %d ,encrypted data=%x, ",i,((char*)params[1].memref.buffer)[i]);
-		}
+		// IMSG("PRINTING ENCRYPTED DATA:\n");
+		// for (i=0; i< 16; i++) {
+		// 	IMSG("i = %d ,encrypted data=%x, ",i,((char*)params[1].memref.buffer)[i]);
+		// }
 
 		//TODO: throw data back to the userfile
 
@@ -374,6 +353,7 @@ static TEE_Result encryptWithPrivateKey(uint32_t param_types, TEE_Param params[4
 	uint32_t flags = TEE_DATA_FLAG_ACCESS_WRITE_META | TEE_DATA_FLAG_ACCESS_READ | TEE_DATA_FLAG_ACCESS_WRITE;
 	param_types = param_types;
 	params = params;
+	i = 0; i=i;
 	object = TEE_HANDLE_NULL;
 
 	TEE_MemFill((char*)hashedKeyBuf,0,hkbSize);
@@ -428,18 +408,18 @@ static TEE_Result encryptWithPrivateKey(uint32_t param_types, TEE_Param params[4
 	//sz = sizeof(out);
 	sz= 16;
 
-	IMSG("PRINTING CLEAR DATA:\n");
-	for (i=0; i< 16; i++) {
-		IMSG("i = %d ,clear data=%x, ",i,((char*)params[1].memref.buffer)[i]);
-	}
+	// IMSG("PRINTING CLEAR DATA:\n");
+	// for (i=0; i< 16; i++) {
+	// 	IMSG("i = %d ,clear data=%x, ",i,((char*)params[1].memref.buffer)[i]);
+	// }
 
 	IMSG("TEE_CipherDoFinal called.\n");
 	TEE_CipherDoFinal(handle,params[1].memref.buffer,16,params[1].memref.buffer,&(sz));
 
-	IMSG("PRINTING ENCRYPTED DATA:\n");
-	for (i=0; i< 16; i++) {
-		IMSG("i = %d ,encrypted data=%x, ",i,((char*)params[1].memref.buffer)[i]);
-	}
+	// IMSG("PRINTING ENCRYPTED DATA:\n");
+	// for (i=0; i< 16; i++) {
+	// 	IMSG("i = %d ,encrypted data=%x, ",i,((char*)params[1].memref.buffer)[i]);
+	// }
 
 	//TODO: throw data back to the userfile
 
@@ -468,14 +448,16 @@ TEE_Result TA_InvokeCommandEntryPoint(void __maybe_unused *sess_ctx,
 
 		case 1: //CRYPT_SET_PASS:
 
-			hashUserKey(param_types, params);
-			IMSG("OPERATION: Set password | buffer: \n");
-			for (uint32_t i = 0; i < params[1].memref.size; i++){
-				IMSG("i=%d , keyBuf[i]:%02x ", i,keyBuf[i]);
-				IMSG("\n");
+			if(hashUserKey(param_types, params) == 0){
+				//print hashed key
+				IMSG("OPERATION: Set password | buffer: \n");
+				for (uint32_t i = 0; i < params[1].memref.size; i++){
+					IMSG("i=%d , keyBuf[i]:%02x ", i,keyBuf[i]);
+					IMSG("\n");
+				}
 			}
 
-			return setPassword(param_types, params);
+			return 1;
 		case 2: //CRYPT_ENCRYPT:
 			IMSG("OPERATION: encrypt | buffer: %s\n",buf);
 			return encryptWithPrivateKey(param_types,params);
