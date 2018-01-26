@@ -38,10 +38,21 @@
 #define LIGHT_FILE_MODE 	(1)
 #define HEAVY_FILE_MODE 	(2)
 #define CHUNK_SIZE				(16)
+#define SCPS_INIT					"CPS_INIT"
+#define SCPS_PROTECT			"CPS_PROTECT"
+#define SCPS_VIEW					"CPS_VIEW"
+
 
 static FILE* fd = NULL;
 static const char* lightFilePath = "lightFile";
 static const char* heavyFilePath = "heavyFile";
+
+enum CPS_TYPE {
+	CPS_INIT = 1,
+	CPS_PROTECT,
+	CPS_VIEW,
+	CPS_INVALID_OPERATION
+};
 
 static void validateArgs(int argc);
 static void show();
@@ -52,106 +63,6 @@ static char* allocateBuf(char* buf,char* argv ,size_t size);
 
 static char* test = "Both wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper object. 	DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA  ote that tabs and spaces are both treated as whitespace, but they are not equal: the lines are considered to have no common leading whitespace. (This behaviour is new in Python 2.5; older versions of this module incorrectly expanded tabs before searching for common leading whitespace.) Both wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper objectBoth wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper object. 	DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA  ote that tabs and spaces are both treated as whitespace, but they are not equal: the lines are considered to have no common leading whitespace. (This behaviour is new in Python 2.5; older versions of this module incorrectly expanded tabs before searching for common leading whitespace.) Both wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper objectBoth wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper object. 	DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA  ote that tabs and spaces are both treated as whitespace, but they are not equal: the lines are considered to have no common leading whitespace. (This behaviour is new in Python 2.5; older versions of this module incorrectly expanded tabs before searching for common leading whitespace.) Both wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper object\n";
 
-
-int main(int argc, char *argv[])
-{
-	char line[512];
-	char* buf = NULL;
-	TEEC_Result res;
-	TEEC_Context ctx;
-	TEEC_Session sess;
-	TEEC_Operation op;
-	TEEC_UUID uuid = TA_HELLO_WORLD_UUID;
-	TEEC_SharedMemory shared_mem;
-	uint32_t err_origin;
-	uint32_t COMMAND_TYPE = 0;
-
-	validateArgs(argc);
-
-	// injecting some random data to local env files to later be enc/dec
-	fillFilesWithData();
-
-	// while(fixed_block_size < strlen(argv[2])+1){
-	// 	fixed_block_size += UINT_BLOCK_SIZE;
-	// }
-
-
-	buf = allocateBuf(buf,argv[2],CHUNK_SIZE);
-	if(NULL == buf)
-		return -1;
-
-
-	switch (atoi(argv[1])) {
-		case 1:	//set password
-			COMMAND_TYPE = 1;
-			printf("case : %s\n",argv[2]);
-			break;
-
-		case 2: //pass a msg
-			COMMAND_TYPE = 2;
-			printf("case : %s\n",argv[2]);
-			fd = openFile(lightFilePath,"a+");
-
-			//sanity print file
-			if(fd != NULL){
-				while(fgets(line,512,fd)){
-					printf("%s\n", line);
-				}
-		  }
-
-			//writeEncDataToFile(fd,readBytes,seekStart,buf);
-			closeFile(fd);
-
-			break;
-
-		case 3:	//invoke show()
-			COMMAND_TYPE = 3;
-			printf("case 3, argv[2]: %s\n",argv[2]);
-
-			show();
-			break;
-		default:
-			printf("default case\n");
-			break;
-	}
-
-	/* init shared memory */
-	shared_mem.buffer = buf;
-	shared_mem.size = sizeof(buf);
-	shared_mem.flags = TEEC_MEM_INPUT;
-
-	printf("buf=%s , shared_mem.buffer = %s\nshared_mem.size = %lu",(char*)buf,(char*)shared_mem.buffer,shared_mem.size );
-
-	/* Initialize a context connecting us to the TEE */
-	res = TEEC_InitializeContext(NULL, &ctx);
-	if ( res != TEEC_SUCCESS)
-		errx(1, "TEEC_InitializeContext failed with code 0x%x", res);
-
-	res = TEEC_OpenSession(&ctx, &sess, &uuid, TEEC_LOGIN_PUBLIC, NULL, NULL, &err_origin);
-	if(res != TEEC_SUCCESS)
-		errx(1, "TEEC_Opensession failed with code 0x%x origin 0x%x", res, err_origin);
-
-	/* Clear the TEEC_Operation struct */
-	memset(&op, 0, sizeof(op));
-
-	op.paramTypes = TEEC_PARAM_TYPES(TEEC_VALUE_INOUT, TEEC_MEMREF_WHOLE, TEEC_NONE, TEEC_NONE);
-	//init memref_whole parameter
-	op.params[1].memref.parent = &shared_mem;
-	op.params[1].memref.size = shared_mem.size;
-	op.params[1].memref.offset = 0;
-
-	TEEC_RegisterSharedMemory(&ctx,&shared_mem);
-
-	res = TEEC_InvokeCommand(&sess, COMMAND_TYPE, &op, &err_origin);
-	if (res != TEEC_SUCCESS)
-		errx(1, "TEEC_InvokeCommand failed with code 0x%x origin 0x%x", res, err_origin);
-
-	TEEC_ReleaseSharedMemory(&shared_mem);
-	TEEC_CloseSession(&sess);
-	TEEC_FinalizeContext(&ctx);
-
-	return 0;
-}
 
 static void validateArgs(int argc){
 	if(argc != 3){
@@ -227,4 +138,118 @@ static char* allocateBuf(char* buf,char* argv ,size_t size) {
 		}
 		printf("buf=%s\n",buf );
 		return buf;
+}
+
+static int etoi(char* command){
+	printf("command: %s\n", command);
+	if(strcmp(command,SCPS_INIT) == 0)
+		return 1;
+	if(strcmp(command,SCPS_PROTECT) == 0)
+		return 2;
+	if(strcmp(command,SCPS_VIEW) == 0)
+		return 3;
+
+	printf("No command '%s' found, did you mean:\n",command );
+	printf("CPS_INIT\nCPS_PROTECT\nCPS_VIEW\nClosing application." );
+	return CPS_INVALID_OPERATION;
+}
+
+int main(int argc, char *argv[])
+{
+	char line[512];
+	char* buf = NULL;
+	TEEC_Result res;
+	TEEC_Context ctx;
+	TEEC_Session sess;
+	TEEC_Operation op;
+	TEEC_UUID uuid = TA_HELLO_WORLD_UUID;
+	TEEC_SharedMemory shared_mem;
+	uint32_t err_origin;
+	enum CPS_TYPE CPS;
+
+	validateArgs(argc);
+
+	CPS = etoi(argv[1]);
+	if(CPS_INVALID_OPERATION == CPS){
+		return -1;
+	}
+
+	// injecting some random data to local env files to later be enc/dec
+	fillFilesWithData();
+
+	buf = allocateBuf(buf,argv[2],CHUNK_SIZE);
+	if(NULL == buf)
+		return -1;
+
+
+	printf("CPS: %d\n",CPS);
+	switch (CPS) {
+		case CPS_INIT:	//set password
+
+			printf("case : %s\n",argv[1]);
+			break;
+
+		case CPS_PROTECT: //pass a msg
+
+			printf("case : %s\n",argv[1]);
+			fd = openFile(lightFilePath,"a+");
+
+			//sanity print file
+			printf("printing file data:\n");
+			if(fd != NULL){
+				while(fgets(line,512,fd)){
+					printf("%s\n", line);
+				}
+		  }
+
+			//writeEncDataToFile(fd,readBytes,seekStart,buf);
+			closeFile(fd);
+			break;
+
+		case CPS_VIEW:	//invoke show()
+			printf("case : %s\n",argv[1]);
+
+			show();
+			break;
+		default:
+			printf("default case\n");
+			break;
+	}
+
+	/* init shared memory */
+	shared_mem.buffer = buf;
+	shared_mem.size = sizeof(buf);
+	shared_mem.flags = TEEC_MEM_INPUT;
+
+	printf("buf=%s , shared_mem.buffer = %s\nshared_mem.size = %lu",(char*)buf,(char*)shared_mem.buffer,shared_mem.size );
+
+	/* Initialize a context connecting us to the TEE */
+	res = TEEC_InitializeContext(NULL, &ctx);
+	if ( res != TEEC_SUCCESS)
+		errx(1, "TEEC_InitializeContext failed with code 0x%x", res);
+
+	res = TEEC_OpenSession(&ctx, &sess, &uuid, TEEC_LOGIN_PUBLIC, NULL, NULL, &err_origin);
+	if(res != TEEC_SUCCESS)
+		errx(1, "TEEC_Opensession failed with code 0x%x origin 0x%x", res, err_origin);
+
+	/* Clear the TEEC_Operation struct */
+	memset(&op, 0, sizeof(op));
+
+	op.paramTypes = TEEC_PARAM_TYPES(TEEC_VALUE_INOUT, TEEC_MEMREF_WHOLE, TEEC_NONE, TEEC_NONE);
+	//init memref_whole parameter
+	op.params[1].memref.parent = &shared_mem;
+	op.params[1].memref.size = shared_mem.size;
+	op.params[1].memref.offset = 0;
+
+	TEEC_RegisterSharedMemory(&ctx,&shared_mem);
+
+	res = TEEC_InvokeCommand(&sess, CPS, &op, &err_origin);
+	if (res != TEEC_SUCCESS)
+		errx(1, "TEEC_InvokeCommand failed with code 0x%x origin 0x%x", res, err_origin);
+
+	TEEC_ReleaseSharedMemory(&shared_mem);
+	TEEC_CloseSession(&sess);
+	TEEC_FinalizeContext(&ctx);
+
+	return 0;
 }
