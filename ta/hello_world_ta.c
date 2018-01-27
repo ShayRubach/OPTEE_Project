@@ -47,6 +47,13 @@ char out[512] = {0};			// out buff
 char iv[16] = {0};				//instruction vector
 int iv_len = sizeof(iv);
 
+enum CPS_TYPE {
+	CPS_INIT = 1,
+	CPS_PROTECT,
+	CPS_VIEW,
+	CPS_VIEW_RAW,
+	CPS_VIEW_ASCII,
+};
 
 
 /*
@@ -110,14 +117,6 @@ TEE_Result TA_OpenSessionEntryPoint(uint32_t param_types,
 void TA_CloseSessionEntryPoint(void __maybe_unused *sess_ctx)
 {
 	(void)&sess_ctx; /* Unused parameter */
-}
-
-static TEE_Result show(uint32_t param_types, TEE_Param params[4]){
-	param_types = param_types;
-	params = params;
-
-
-	return TEE_SUCCESS;
 }
 
 
@@ -283,15 +282,15 @@ static TEE_Result decryptWithPrivateKey(uint32_t param_types, TEE_Param params[4
 		IMSG("setAttribute called.\n");
 		setAttribute(&aesAttributes,TEE_ATTR_SECRET_VALUE,hashedKeyBuf,hkbSize);
 
-		IMSG("TEE_ResetTransientObject called.\n");
-		TEE_ResetTransientObject(key);
-
 		IMSG("TEE_AllocateTransientObject called.\n");
 		res = TEE_AllocateTransientObject(TEE_TYPE_AES, 128, &key);
 		if (res != TEE_SUCCESS) {
-	        IMSG("TEE_AllocateTransientObject returned (%08x).",res);
-	        return res;
-	  }
+			IMSG("TEE_AllocateTransientObject returned (%08x).",res);
+			return res;
+		}
+
+		IMSG("TEE_ResetTransientObject called.\n");
+		TEE_ResetTransientObject(key);
 
 		IMSG("TEE_PopulateTransientObject called.\n");
 		TEE_PopulateTransientObject(key, (TEE_Attribute *)&aesAttributes, 1);
@@ -356,6 +355,11 @@ static TEE_Result encryptWithPrivateKey(uint32_t param_types, TEE_Param params[4
 	i = 0; i=i;
 	object = TEE_HANDLE_NULL;
 
+
+	for(i=0;i<16;++i){
+		IMSG("%c\n",((char*)params[1].memref.buffer)[i]);
+	}
+
 	TEE_MemFill((char*)hashedKeyBuf,0,hkbSize);
 
 	IMSG("createAndOpenObject called.\n");
@@ -372,15 +376,15 @@ static TEE_Result encryptWithPrivateKey(uint32_t param_types, TEE_Param params[4
 	IMSG("setAttribute called.\n");
 	setAttribute(&aesAttributes,TEE_ATTR_SECRET_VALUE,hashedKeyBuf,hkbSize);
 
-	IMSG("TEE_ResetTransientObject called.\n");
-	TEE_ResetTransientObject(key);
-
 	IMSG("TEE_AllocateTransientObject called.\n");
 	res = TEE_AllocateTransientObject(TEE_TYPE_AES, 128, &key);
 	if (res != TEE_SUCCESS) {
-        IMSG("TEE_AllocateTransientObject returned (%08x).",res);
-        return res;
-  }
+		IMSG("TEE_AllocateTransientObject returned (%08x).",res);
+		return res;
+	}
+
+	IMSG("TEE_ResetTransientObject called.\n");
+	TEE_ResetTransientObject(key);
 
 	IMSG("TEE_PopulateTransientObject called.\n");
 	TEE_PopulateTransientObject(key, (TEE_Attribute *)&aesAttributes, 1);
@@ -446,30 +450,29 @@ TEE_Result TA_InvokeCommandEntryPoint(void __maybe_unused *sess_ctx,
 
 	switch (cmd_id) {
 
-		case 1: //CRYPT_SET_PASS:
+		case CPS_INIT: //CRYPT_SET_PASS:
 
 			if(hashUserKey(param_types, params) == 0){
 				//print hashed key
 				IMSG("OPERATION: Set password | buffer: \n");
 				for (uint32_t i = 0; i < params[1].memref.size; i++){
 					IMSG("i=%d , keyBuf[i]:%02x ", i,keyBuf[i]);
-					IMSG("\n");
 				}
 			}
 
-			return 1;
-		case 2: //CRYPT_ENCRYPT:
+			return TEE_SUCCESS;
+		case CPS_PROTECT: //CRYPT_ENCRYPT:
 			IMSG("OPERATION: encrypt | buffer: %s\n",buf);
 			return encryptWithPrivateKey(param_types,params);
 			//return enc(param_types, params);
-		case 3: //CRYPT_DECRYPT:
-			IMSG("OPERATION: decrypt | buffer: %s\n",buf);
+		case CPS_VIEW_RAW: //CRYPT_DECRYPT RAW:
+			IMSG("OPERATION: decrypt(raw) | buffer: %s\n",buf);
 			return decryptWithPrivateKey(param_types, params);
-		case 4: //CRYPT_SHOW:
-			IMSG("OPERATION: show() | buffer: %s\n",buf);
-			return show(param_types, params);
-		default:
+		case CPS_VIEW_ASCII: //CRYPT_DECRYPT ASCII:
+			IMSG("OPERATION: decrypt(ascii) | buffer: %s\n",buf);
+			return decryptWithPrivateKey(param_types, params);
 
+		default:
 			IMSG("OPERATION: TEE_ERROR_BAD_PARAMETERS | buffer: %s\n",buf);
 			return TEE_ERROR_BAD_PARAMETERS;
 	}
