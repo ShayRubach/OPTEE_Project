@@ -35,7 +35,7 @@
 /* To the the UUID (found the the TA's h-file(s)) */
 #include <hello_world_ta.h>
 
-#define UINT_BLOCK_SIZE		(16)
+
 #define LIGHT_FILE_MODE 	(1)
 #define HEAVY_FILE_MODE 	(2)
 #define CHUNK_SIZE				(16)
@@ -274,8 +274,6 @@ int main(int argc, char *argv[])
 		if(NULL == fd)
 			return -1;
 
-		readBytes=0;
-		char in_buf[CHUNK_SIZE] = {0};
 
 		// while(!feof(fd)){
 		// 	readBytes = fread(in_buf,1,CHUNK_SIZE,fd);
@@ -300,20 +298,22 @@ int main(int argc, char *argv[])
 		// 	printf("%c",c );
 		// }
 
-		while(!feof(fd)){
+		fseek(fd,0,SEEK_END);
+		size_t lastByte = ftell(fd);
+		fseek(fd,0,SEEK_SET);
 
+		//while(!feof(fd)){
+		while(lastByte != ftell(fd)){
 
 			readBytes = fread(shared_mem.buffer,1,CHUNK_SIZE,fd);
 
-			printf("ftell(fd) 2 =%lu\n",ftell(fd));
-			printf("shared_mem.buffer after fread(): %s\n",(char*)shared_mem.buffer);
-			printf("fread(): read %lu bytes from file.\n",readBytes);
-			printf("seeking back..\n");
+			// printf("ftell(fd) 2 =%lu\n",ftell(fd));
+			// printf("shared_mem.buffer after fread(): %s\n",(char*)shared_mem.buffer);
+			// printf("fread(): read %lu bytes from file.\n",readBytes);
+			// printf("seeking back..\n");
 			fseek(fd,readBytes*(-1),SEEK_CUR);
 
-			//fseek(fd, CHUNK_SIZE*(-1) ,SEEK_CUR);
-
-			printf("ftell(fd) 3 =%lu\n",ftell(fd));
+			// printf("ftell(fd) 3 =%lu\n",ftell(fd));
 
 			res = TEEC_InvokeCommand(&sess, CPS, &op, &err_origin);
 			if (res != TEEC_SUCCESS)
@@ -323,15 +323,14 @@ int main(int argc, char *argv[])
 			// 	printf("%x__",((char*)shared_mem.buffer)[i]);
 			// }
 
-			printf("shared buf:%s\n shared size:%lu\n strlen shared buff:%lu\n",(char*)shared_mem.buffer,shared_mem.size,strlen((char*)shared_mem.buffer) );
-			strncpy(in_buf,shared_mem.buffer,readBytes);
-
-
-			fwrite(in_buf,1,readBytes,fd);
+			// printf("shared buf:%s\n shared size:%lu\n strlen shared buff:%lu\n",(char*)shared_mem.buffer,shared_mem.size,strlen((char*)shared_mem.buffer) );
+			fwrite(shared_mem.buffer,1,readBytes,fd);
 			memset(shared_mem.buffer,0,CHUNK_SIZE);
+			printf("ftell(fd) = %lu\n",ftell(fd));
 
-			printf("ftell(fd) 6      = %lu\n",ftell(fd));
 
+			// if(lastByte == ftell(fd))
+			// 	break;
 		}
 
 		closeFile(fd);
@@ -345,10 +344,10 @@ int main(int argc, char *argv[])
 		break;
 
 		case CPS_INIT:
-		printf("TEEC_InvokeCommand called.\n");
-		res = TEEC_InvokeCommand(&sess, CPS, &op, &err_origin);
-		if (res != TEEC_SUCCESS)
-			errx(1, "TEEC_InvokeCommand failed with code 0x%x origin 0x%x", res, err_origin);
+			printf("TEEC_InvokeCommand called.\n");
+			res = TEEC_InvokeCommand(&sess, CPS, &op, &err_origin);
+			if (res != TEEC_SUCCESS)
+				errx(1, "TEEC_InvokeCommand failed with code 0x%x origin 0x%x", res, err_origin);
 
 		default:
 			break;
