@@ -36,23 +36,21 @@
 #include <hello_world_ta.h>
 
 
-#define LIGHT_FILE_MODE 	(1)
-#define HEAVY_FILE_MODE 	(2)
+#define REF_OFFSET				(0)
 #define CHUNK_SIZE				(16)
+#define INVALID_ARGS			(-1)
+#define INPUT_ERROR				(-1)
+
+
 #define SCPS_INIT					"CPS_INIT"
 #define SCPS_PROTECT			"CPS_PROTECT"
 #define SCPS_VIEW					"CPS_VIEW"
 #define SCPS_VIEW_RAW			"raw"
 #define SCPS_VIEW_ASCII		"ascii"
 
-
-
 static FILE* fd = NULL;
 static const char* lightFilePath = "lightFile";
 static const char* heavyFilePath = "heavyFile";
-
-
-
 
 enum CPS_TYPE {
 	CPS_INIT = 1,
@@ -63,24 +61,188 @@ enum CPS_TYPE {
 	CPS_INVALID_OPERATION
 };
 
-//static void validateArgs(const char* argv,int argc);
-static void show();
-static FILE* openFile(const char* filePath,const char* mode);
-static int closeFile(FILE* fd);
-static void fillFilesWithData();
-static char* allocateBuf(char* buf,size_t size);
+static int 		validateArgs(int argc);														//check for invalid args count
+static int 		etoi(char* command);															// enum to int
+static int 		closeFile(FILE* fd);															// safe close file
+static void 	show();																						// ...
+static void 	fillFilesWithData();															// local data for files
+static FILE* 	openFile(const char* filePath,const char* mode);	// safe open file
+static size_t getLastByteFromFile(FILE* fd);										// get last byte of file
 
-static char* test = "Both wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper object. 	DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA  ote that tabs and spaces are both treated as whitespace, but they are not equal: the lines are considered to have no common leading whitespace. (This behaviour is new in Python 2.5; older versions of this module incorrectly expanded tabs before searching for common leading whitespace.) Both wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper objectBoth wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper object. 	DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA  ote that tabs and spaces are both treated as whitespace, but they are not equal: the lines are considered to have no common leading whitespace. (This behaviour is new in Python 2.5; older versions of this module incorrectly expanded tabs before searching for common leading whitespace.) Both wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper objectBoth wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper object. 	DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA  ote that tabs and spaces are both treated as whitespace, but they are not equal: the lines are considered to have no common leading whitespace. (This behaviour is new in Python 2.5; older versions of this module incorrectly expanded tabs before searching for common leading whitespace.) Both wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper object\n";
+//those 2 data strings are to be inserted into the local files, for testings:
+static char* heavy_data = "Both wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper object. 	DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA  ote that tabs and spaces are both treated as whitespace, but they are not equal: the lines are considered to have no common leading whitespace. (This behaviour is new in Python 2.5; older versions of this module incorrectly expanded tabs before searching for common leading whitespace.) Both wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper objectBoth wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper object. 	DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA  ote that tabs and spaces are both treated as whitespace, but they are not equal: the lines are considered to have no common leading whitespace. (This behaviour is new in Python 2.5; older versions of this module incorrectly expanded tabs before searching for common leading whitespace.) Both wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper objectBoth wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper object. 	DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA  ote that tabs and spaces are both treated as whitespace, but they are not equal: the lines are considered to have no common leading whitespace. (This behaviour is new in Python 2.5; older versions of this module incorrectly expanded tabs before searching for common leading whitespace.) Both wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper object\n";
 
-//@bad logic
-// static void validateArgs(const char* argv, int argc){
-// 	if( ((strcmp(argv,SCPS_INIT) == 0) && argc != 3 )
-// 		||((strcmp(argv,SCPS_VIEW) == 0) && argc != 3 )
-// 		|| argc != 2){
-// 		printf("ERROR: invalid number of arguments.\n");
-// 		exit(-1);
-// 	}
-// }
+static char* light_data = "Uncountable nouns are nouns that are either difficult or impossible to count. Uncountable nouns include intangible things (e.g., information, air), liquids (e.g., milk, wine), and things that are too large or numerous to count (e.g., equipment, sand, wood). Because these things can’t be counted, you should never use a or an with them—remember, the indefinite article is only for singular nouns. Uncountable nouns can be modified by words like some, however. Consider the examples below for reference. Water is an uncountable noun and should not be used with the indefinite article.However, if you describe the water in terms of countable units (like bottles), you can use the indefinite article.\n";
+
+
+int main(int argc, char *argv[])
+{
+	TEEC_Result res;
+	TEEC_Context ctx;
+	TEEC_Session sess;
+	TEEC_Operation op;
+	TEEC_UUID uuid = TA_HELLO_WORLD_UUID;
+	TEEC_SharedMemory shared_mem;
+	uint32_t err_origin;
+	enum CPS_TYPE CPS;
+	char* buf = NULL;
+	size_t readBytes = 0;
+
+	// validate input
+	if(INVALID_ARGS == (validateArgs(argc)))
+		return INPUT_ERROR;
+	if(CPS_INVALID_OPERATION == (	CPS = etoi(argv[1])))
+		return INPUT_ERROR;
+
+	fillFilesWithData();
+
+	shared_mem.size = CHUNK_SIZE;
+	shared_mem.flags = TEEC_MEM_INPUT;
+	/* Clear the TEEC_Operation struct */
+	memset(&op, 0, sizeof(op));
+	op.paramTypes = TEEC_PARAM_TYPES(TEEC_VALUE_INOUT, TEEC_MEMREF_WHOLE, TEEC_NONE, TEEC_NONE);
+	//init memref_whole parameter
+	op.params[1].memref.parent = &shared_mem;
+	op.params[1].memref.size = shared_mem.size;
+	op.params[1].memref.offset = REF_OFFSET;
+
+	printf("TEEC_InitializeContext called.\n");
+	res = TEEC_InitializeContext(NULL, &ctx);
+	if ( res != TEEC_SUCCESS)
+		errx(1, "TEEC_InitializeContext failed with code 0x%x", res);
+
+	printf("TEEC_OpenSession called.\n");
+	res = TEEC_OpenSession(&ctx, &sess, &uuid, TEEC_LOGIN_PUBLIC, NULL, NULL, &err_origin);
+	if(res != TEEC_SUCCESS)
+		errx(1, "TEEC_Opensession failed with code 0x%x origin 0x%x", res, err_origin);
+
+
+	printf("TEEC_RegisterSharedMemory called.\n");
+	TEEC_RegisterSharedMemory(&ctx,&shared_mem);
+
+	printf("CPS: %d\n",CPS);
+	switch (CPS) {
+		case CPS_INIT:	//set password
+			printf("case : %s\n",argv[1]);
+
+			memset(shared_mem.buffer,0,CHUNK_SIZE);
+			strncpy(shared_mem.buffer,argv[2],strlen(argv[2]));
+
+			printf("TEEC_InvokeCommand called.\n");
+			res = TEEC_InvokeCommand(&sess, CPS, &op, &err_origin);
+			if (res != TEEC_SUCCESS)
+					errx(1, "TEEC_InvokeCommand failed with code 0x%x origin 0x%x", res, err_origin);
+			break;
+
+		case CPS_PROTECT: //pass a msg
+
+			printf("case : %s\n",argv[1]);
+			if(NULL == (fd = openFile(lightFilePath,"r+")))
+				return -1;
+
+			size_t lastByte = getLastByteFromFile(fd);
+
+			while(lastByte != ftell(fd)){
+				memset(shared_mem.buffer,0,CHUNK_SIZE);
+				readBytes = fread(shared_mem.buffer,1,CHUNK_SIZE,fd);
+				fseek(fd,readBytes*(-1),SEEK_CUR);
+
+				res = TEEC_InvokeCommand(&sess, CPS, &op, &err_origin);
+
+				if (res != TEEC_SUCCESS)
+					errx(1, "TEEC_InvokeCommand failed with code 0x%x origin 0x%x", res, err_origin);
+
+				fwrite(shared_mem.buffer,1,readBytes,fd);
+				printf("ftell(fd) = %lu\n",ftell(fd));
+
+			}
+
+			closeFile(fd);
+			break;
+
+		case CPS_VIEW:	//invoke show()
+			printf("case : %s\n",argv[1]);
+			if(strcmp(argv[2],SCPS_VIEW_RAW) == 0){
+				CPS = CPS_VIEW_RAW;
+				show();
+			}
+			else if(strcmp(argv[2],SCPS_VIEW_ASCII) == 0){
+				CPS = CPS_VIEW_ASCII;
+				show();
+			}
+			else
+				return -1;
+
+			break;
+		default:
+			printf("default case\n");
+			break;
+	}
+
+
+	switch(CPS){
+		printf("entered switch 2 with CPS=%d\n",CPS );
+		case CPS_PROTECT:
+
+		// if(NULL == (fd = openFile(lightFilePath,"r+")))
+		// 	return -1;
+    //
+		// size_t lastByte = getLastByteFromFile(fd);
+    //
+		// while(lastByte != ftell(fd)){
+		// 	memset(shared_mem.buffer,0,CHUNK_SIZE);
+		// 	readBytes = fread(shared_mem.buffer,1,CHUNK_SIZE,fd);
+		// 	fseek(fd,readBytes*(-1),SEEK_CUR);
+    //
+		// 	res = TEEC_InvokeCommand(&sess, CPS, &op, &err_origin);
+    //
+		// 	if (res != TEEC_SUCCESS)
+		// 		errx(1, "TEEC_InvokeCommand failed with code 0x%x origin 0x%x", res, err_origin);
+    //
+		// 	fwrite(shared_mem.buffer,1,readBytes,fd);
+		// 	printf("ftell(fd) = %lu\n",ftell(fd));
+    //
+		// }
+    //
+		// closeFile(fd);
+
+		break;
+
+		case CPS_VIEW_RAW:
+		break;
+
+		case CPS_VIEW_ASCII:
+		break;
+
+		// case CPS_INIT:
+		// 	printf("TEEC_InvokeCommand called.\n");
+		// 	res = TEEC_InvokeCommand(&sess, CPS, &op, &err_origin);
+		// 	if (res != TEEC_SUCCESS)
+		// 		errx(1, "TEEC_InvokeCommand failed with code 0x%x origin 0x%x", res, err_origin);
+
+		default:
+			break;
+	}
+
+	if(NULL != buf)
+		free(buf);
+
+	TEEC_ReleaseSharedMemory(&shared_mem);
+	TEEC_CloseSession(&sess);
+	TEEC_FinalizeContext(&ctx);
+
+	return 0;
+}
+
+
+static int validateArgs(int argc){
+	int res = 1;
+	if(argc != 3){
+		printf("ERROR: invalid number of arguments.\n");
+		res = -1;
+	}
+	return res;
+}
 
 static FILE* openFile(const char* filePath,const char* mode){
 
@@ -105,6 +267,13 @@ static int closeFile(FILE* fd){
 	return ret;
 }
 
+static size_t getLastByteFromFile(FILE* fd){
+	fseek(fd,0,SEEK_END);
+	size_t lastByte = ftell(fd);
+	fseek(fd,0,SEEK_SET);
+	return lastByte;
+}
+
 static void show(){
 	printf("show() called\n");
 	return;
@@ -125,28 +294,16 @@ static void fillFilesWithData(){
 	fd = openFile(lightFilePath,"w+");
 	if(1 == isFileEmpty(fd)){
 		printf("filling file '%s' with random data\n",lightFilePath );
-		fprintf(fd,"%s",test);
+		fprintf(fd,"%s",light_data);
 	}
 	closeFile(fd);
 
 	fd = openFile(heavyFilePath,"w+");
 	if(1 == isFileEmpty(fd)){
 		printf("filling file '%s' with random data\n",heavyFilePath );
-		fprintf(fd,"%s",test);
+		fprintf(fd,"%s",heavy_data);
 	}
 	closeFile(fd);
-}
-
-static char* allocateBuf(char* buf,size_t size) {
-		buf = (char*)malloc(size);
-		if(buf == NULL){
-			printf("failed to allocate 'buf'\n");
-		}
-		else{
-			memset(buf,0,size);
-		}
-
-		return buf;
 }
 
 void printFile(FILE* fd){
@@ -178,187 +335,4 @@ static int etoi(char* command){
 	printf("No command '%s' found, did you mean:\n",command );
 	printf("CPS_INIT\nCPS_PROTECT\nCPS_VIEW\nClosing application." );
 	return CPS_INVALID_OPERATION;
-}
-
-int main(int argc, char *argv[])
-{
-	char* buf = NULL;
-	TEEC_Result res;
-	TEEC_Context ctx;
-	TEEC_Session sess;
-	TEEC_Operation op;
-	TEEC_UUID uuid = TA_HELLO_WORLD_UUID;
-	TEEC_SharedMemory shared_mem;
-	uint32_t err_origin;
-	enum CPS_TYPE CPS;
-
-	//validateArgs(argv[1],argc);
-
-	CPS = etoi(argv[1]);
-	if(CPS_INVALID_OPERATION == CPS)
-		return -1;
-
-	fillFilesWithData();
-
-	buf = allocateBuf(buf,CHUNK_SIZE);
-	if(NULL == buf)
-		return -1;
-
-	printf("CPS: %d\n",CPS);
-	switch (CPS) {
-		case CPS_INIT:	//set password
-			strncpy(buf,argv[2],strlen(argv[2]));
-			printf("case : %s\n",argv[1]);
-			break;
-
-		case CPS_PROTECT: //pass a msg
-
-			printf("case : %s\n",argv[1]);
-			break;
-
-		case CPS_VIEW:	//invoke show()
-			printf("case : %s\n",argv[1]);
-			if(strcmp(argv[2],SCPS_VIEW_RAW) == 0){
-				CPS = CPS_VIEW_RAW;
-				show();
-			}
-			else if(strcmp(argv[2],SCPS_VIEW_ASCII) == 0){
-				CPS = CPS_VIEW_ASCII;
-				show();
-			}
-			else
-				return -1;
-
-			break;
-		default:
-			printf("default case\n");
-			break;
-	}
-
-	shared_mem.buffer = buf;
-	shared_mem.size = CHUNK_SIZE;
-	shared_mem.flags = TEEC_MEM_INPUT;
-	printf("buf=%s | shared_mem.buffer = %s | shared_mem.size = %lu\n",(char*)buf,(char*)shared_mem.buffer,shared_mem.size );
-
-	printf("TEEC_InitializeContext called.\n");
-	res = TEEC_InitializeContext(NULL, &ctx);
-	if ( res != TEEC_SUCCESS)
-		errx(1, "TEEC_InitializeContext failed with code 0x%x", res);
-
-	printf("TEEC_OpenSession called.\n");
-	res = TEEC_OpenSession(&ctx, &sess, &uuid, TEEC_LOGIN_PUBLIC, NULL, NULL, &err_origin);
-	if(res != TEEC_SUCCESS)
-		errx(1, "TEEC_Opensession failed with code 0x%x origin 0x%x", res, err_origin);
-
-	/* Clear the TEEC_Operation struct */
-	memset(&op, 0, sizeof(op));
-
-	op.paramTypes = TEEC_PARAM_TYPES(TEEC_VALUE_INOUT, TEEC_MEMREF_WHOLE, TEEC_NONE, TEEC_NONE);
-	//init memref_whole parameter
-	op.params[1].memref.parent = &shared_mem;
-	op.params[1].memref.size = shared_mem.size;
-	op.params[1].memref.offset = 0;
-
-	printf("TEEC_RegisterSharedMemory called.\n");
-	TEEC_RegisterSharedMemory(&ctx,&shared_mem);
-
-	size_t readBytes = 0;
-	switch(CPS){
-		printf("entered switch 2 with CPS=%d\n",CPS );
-		case CPS_PROTECT:
-
-
-		fd = openFile(lightFilePath,"r+");
-		fseek(fd,0,SEEK_SET);
-
-		if(NULL == fd)
-			return -1;
-
-
-		// while(!feof(fd)){
-		// 	readBytes = fread(in_buf,1,CHUNK_SIZE,fd);
-		// 	memset(in_buf,0,readBytes);
-		// 	printf("readBytes: %lu\n",readBytes );
-		// }
-    //
-
-		// while(!feof(fd)){
-		// 	readBytes = fread(shared_mem.buffer,1,CHUNK_SIZE,fd);
-		// 	memset(shared_mem.buffer,0,readBytes);
-		// 	printf("%s ",(char*)shared_mem.buffer );
-		// 	printf("readBytes: %lu\n",readBytes );
-		// }
-
-
-
-
-		//works
-		// int c;
-		// while((c = fgetc(fd)) != EOF){
-		// 	printf("%c",c );
-		// }
-
-		fseek(fd,0,SEEK_END);
-		size_t lastByte = ftell(fd);
-		fseek(fd,0,SEEK_SET);
-
-		//while(!feof(fd)){
-		while(lastByte != ftell(fd)){
-
-			readBytes = fread(shared_mem.buffer,1,CHUNK_SIZE,fd);
-
-			// printf("ftell(fd) 2 =%lu\n",ftell(fd));
-			// printf("shared_mem.buffer after fread(): %s\n",(char*)shared_mem.buffer);
-			// printf("fread(): read %lu bytes from file.\n",readBytes);
-			// printf("seeking back..\n");
-			fseek(fd,readBytes*(-1),SEEK_CUR);
-
-			// printf("ftell(fd) 3 =%lu\n",ftell(fd));
-
-			res = TEEC_InvokeCommand(&sess, CPS, &op, &err_origin);
-			if (res != TEEC_SUCCESS)
-				errx(1, "TEEC_InvokeCommand failed with code 0x%x origin 0x%x", res, err_origin);
-
-			// for (size_t i = 0; i < shared_mem.size; i++) {
-			// 	printf("%x__",((char*)shared_mem.buffer)[i]);
-			// }
-
-			// printf("shared buf:%s\n shared size:%lu\n strlen shared buff:%lu\n",(char*)shared_mem.buffer,shared_mem.size,strlen((char*)shared_mem.buffer) );
-			fwrite(shared_mem.buffer,1,readBytes,fd);
-			memset(shared_mem.buffer,0,CHUNK_SIZE);
-			printf("ftell(fd) = %lu\n",ftell(fd));
-
-
-			// if(lastByte == ftell(fd))
-			// 	break;
-		}
-
-		closeFile(fd);
-
-		break;
-
-		case CPS_VIEW_RAW:
-		break;
-
-		case CPS_VIEW_ASCII:
-		break;
-
-		case CPS_INIT:
-			printf("TEEC_InvokeCommand called.\n");
-			res = TEEC_InvokeCommand(&sess, CPS, &op, &err_origin);
-			if (res != TEEC_SUCCESS)
-				errx(1, "TEEC_InvokeCommand failed with code 0x%x origin 0x%x", res, err_origin);
-
-		default:
-			break;
-	}
-
-	if(NULL != buf)
-		free(buf);
-
-	TEEC_ReleaseSharedMemory(&shared_mem);
-	TEEC_CloseSession(&sess);
-	TEEC_FinalizeContext(&ctx);
-
-	return 0;
 }
