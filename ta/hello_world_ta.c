@@ -260,6 +260,7 @@ static TEE_Result decryptWithPrivateKey(uint32_t param_types, TEE_Param params[4
 		size_t hkbSize = 16;
 		size_t objID_len = 64;
 		char* hashedKeyBuf = TEE_Malloc(16, 0);
+		char fn[] = "decryptWithPrivateKey";
 		char objID[] = FILE_PATH;
 		uint32_t flags = TEE_DATA_FLAG_ACCESS_WRITE_META | TEE_DATA_FLAG_ACCESS_READ | TEE_DATA_FLAG_ACCESS_WRITE;
 		param_types = param_types;
@@ -267,6 +268,16 @@ static TEE_Result decryptWithPrivateKey(uint32_t param_types, TEE_Param params[4
 		object = TEE_HANDLE_NULL;
 		i =0;i=i;
 		TEE_MemFill((char*)hashedKeyBuf,0,hkbSize);
+
+		IMSG("%s: enc ascii\n",fn);
+		for(i=0;i<16;++i){
+			IMSG("%c , ",((char*)params[1].memref.buffer)[i]);
+		}
+
+		IMSG("%s: enc hex\n",fn);
+		for(i=0;i<16;++i){
+			IMSG("%x , ",((char*)params[1].memref.buffer)[i]);
+		}
 
 		IMSG("createAndOpenObject called.\n");
 		if((createAndOpenObject(objID, objID_len, flags,NULL,16,OPEN_ONLY)) == -1){
@@ -318,21 +329,21 @@ static TEE_Result decryptWithPrivateKey(uint32_t param_types, TEE_Param params[4
 		//sz = sizeof(out);
 		sz= 16;
 
-		// IMSG("PRINTING CLEAR DATA:\n");
-		// for (i=0; i< 16; i++) {
-		// 	IMSG("i = %d ,clear data=%x, ",i,((char*)params[1].memref.buffer)[i]);
-		// }
 
 		IMSG("TEE_CipherDoFinal called.\n");
 		TEE_CipherDoFinal(handle,params[1].memref.buffer,16,params[1].memref.buffer,&(sz));
 
-		// IMSG("PRINTING ENCRYPTED DATA:\n");
-		// for (i=0; i< 16; i++) {
-		// 	IMSG("i = %d ,encrypted data=%x, ",i,((char*)params[1].memref.buffer)[i]);
-		// }
 
-		//TODO: throw data back to the userfile
 
+		IMSG("%s: dec ascii\n",fn);
+		for(i=0;i<16;++i){
+			IMSG("%c , ",((char*)params[1].memref.buffer)[i]);
+		}
+
+		IMSG("%s: dec hex\n",fn);
+		for(i=0;i<16;++i){
+			IMSG("%x , ",((char*)params[1].memref.buffer)[i]);
+		}
 		TEE_FreeOperation(handle);
 		TEE_FreeTransientObject(key);
 		TEE_CloseObject(object);
@@ -348,6 +359,7 @@ static TEE_Result encryptWithPrivateKey(uint32_t param_types, TEE_Param params[4
 	size_t hkbSize = 16;
 	size_t objID_len = 64;
 	char* hashedKeyBuf = TEE_Malloc(16, 0);
+	char fn[] = "encryptWithPrivateKey";
 	char objID[] = FILE_PATH;
 	uint32_t flags = TEE_DATA_FLAG_ACCESS_WRITE_META | TEE_DATA_FLAG_ACCESS_READ | TEE_DATA_FLAG_ACCESS_WRITE;
 	param_types = param_types;
@@ -355,10 +367,18 @@ static TEE_Result encryptWithPrivateKey(uint32_t param_types, TEE_Param params[4
 	i = 0; i=i;
 	object = TEE_HANDLE_NULL;
 
+	IMSG("%s called.\n",fn);
 
+	IMSG("%s: clear ascii\n",fn);
 	for(i=0;i<16;++i){
-		IMSG("%c\n",((char*)params[1].memref.buffer)[i]);
+		IMSG("%c , ",((char*)params[1].memref.buffer)[i]);
 	}
+
+	IMSG("%s: clear hex\n",fn);
+	for(i=0;i<16;++i){
+		IMSG("%x , ",((char*)params[1].memref.buffer)[i]);
+	}
+
 
 	TEE_MemFill((char*)hashedKeyBuf,0,hkbSize);
 
@@ -409,14 +429,7 @@ static TEE_Result encryptWithPrivateKey(uint32_t param_types, TEE_Param params[4
 	IMSG("TEE_CipherInit called.\n");
 	TEE_CipherInit(handle,iv,iv_len);
 
-	//sz = sizeof(out);
 	sz= 16;
-
-	// IMSG("PRINTING CLEAR DATA:\n");
-	// for (i=0; i< 16; i++) {
-	// 	IMSG("i = %d ,clear data=%x, ",i,((char*)params[1].memref.buffer)[i]);
-	// }
-
 	IMSG("TEE_CipherDoFinal called.\n");
 	TEE_CipherDoFinal(handle,params[1].memref.buffer,16,params[1].memref.buffer,&(sz));
 
@@ -425,7 +438,17 @@ static TEE_Result encryptWithPrivateKey(uint32_t param_types, TEE_Param params[4
 	// 	IMSG("i = %d ,encrypted data=%x, ",i,((char*)params[1].memref.buffer)[i]);
 	// }
 
-	//TODO: throw data back to the userfile
+
+	IMSG("%s: enc ascii\n",fn);
+	for(i=0;i<16;++i){
+		IMSG("%c , ",((char*)params[1].memref.buffer)[i]);
+	}
+
+	IMSG("%s: enc hex\n",fn);
+	for(i=0;i<16;++i){
+		IMSG("%x , ",((char*)params[1].memref.buffer)[i]);
+	}
+
 
 	TEE_FreeOperation(handle);
 	TEE_FreeTransientObject(key);
@@ -464,7 +487,6 @@ TEE_Result TA_InvokeCommandEntryPoint(void __maybe_unused *sess_ctx,
 		case CPS_PROTECT: //CRYPT_ENCRYPT:
 			IMSG("OPERATION: encrypt | buffer: %s\n",buf);
 			return encryptWithPrivateKey(param_types,params);
-			//return enc(param_types, params);
 		case CPS_VIEW_RAW: //CRYPT_DECRYPT RAW:
 			IMSG("OPERATION: decrypt(raw) | buffer: %s\n",buf);
 			return decryptWithPrivateKey(param_types, params);

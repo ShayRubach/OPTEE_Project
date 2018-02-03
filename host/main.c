@@ -64,10 +64,10 @@ enum CPS_TYPE {
 static int 		validateArgs(int argc);														//check for invalid args count
 static int 		etoi(char* command);															// enum to int
 static int 		closeFile(FILE* fd);															// safe close file
-static void 	show();																						// ...
 static void 	fillFilesWithData();															// local data for files
 static FILE* 	openFile(const char* filePath,const char* mode);	// safe open file
 static size_t getLastByteFromFile(FILE* fd);										// get last byte of file
+static void 	printFile(FILE* fd);
 
 //those 2 data strings are to be inserted into the local files, for testings:
 static char* heavy_data = "Both wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper object. 	DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA  ote that tabs and spaces are both treated as whitespace, but they are not equal: the lines are considered to have no common leading whitespace. (This behaviour is new in Python 2.5; older versions of this module incorrectly expanded tabs before searching for common leading whitespace.) Both wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper objectBoth wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper object. 	DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA  ote that tabs and spaces are both treated as whitespace, but they are not equal: the lines are considered to have no common leading whitespace. (This behaviour is new in Python 2.5; older versions of this module incorrectly expanded tabs before searching for common leading whitespace.) Both wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper objectBoth wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper object. 	DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA  ote that tabs and spaces are both treated as whitespace, but they are not equal: the lines are considered to have no common leading whitespace. (This behaviour is new in Python 2.5; older versions of this module incorrectly expanded tabs before searching for common leading whitespace.) Both wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper object\n";
@@ -85,7 +85,6 @@ int main(int argc, char *argv[])
 	TEEC_SharedMemory shared_mem;
 	uint32_t err_origin;
 	enum CPS_TYPE CPS;
-	char* buf = NULL;
 	size_t readBytes = 0;
 
 	// validate input
@@ -96,9 +95,17 @@ int main(int argc, char *argv[])
 
 	fillFilesWithData();
 
+
+	shared_mem.buffer = (char*)malloc(CHUNK_SIZE);
 	shared_mem.size = CHUNK_SIZE;
 	shared_mem.flags = TEEC_MEM_INPUT;
-	/* Clear the TEEC_Operation struct */
+
+	if(!shared_mem.buffer){
+		printf("shared_mem.buffer is null.\n");
+		return -1;
+	}
+
+		/* Clear the TEEC_Operation struct */
 	memset(&op, 0, sizeof(op));
 	op.paramTypes = TEEC_PARAM_TYPES(TEEC_VALUE_INOUT, TEEC_MEMREF_WHOLE, TEEC_NONE, TEEC_NONE);
 	//init memref_whole parameter
@@ -134,12 +141,27 @@ int main(int argc, char *argv[])
 					errx(1, "TEEC_InvokeCommand failed with code 0x%x origin 0x%x", res, err_origin);
 			break;
 
+		case CPS_VIEW:	//invoke show()
+			printf("case : %s\n",argv[1]);
+			if(strcmp(argv[2],SCPS_VIEW_RAW) == 0){
+				//
+			}
+			else if(strcmp(argv[2],SCPS_VIEW_ASCII) == 0){
+				//
+			}
+			else{
+				printf("Invalid argument: %s\n",argv[2]);
+				return INPUT_ERROR;
+			}
+
+
 		case CPS_PROTECT: //pass a msg
 
 			printf("case : %s\n",argv[1]);
 			if(NULL == (fd = openFile(lightFilePath,"r+")))
 				return -1;
 
+			printFile(fd);
 			size_t lastByte = getLastByteFromFile(fd);
 
 			while(lastByte != ftell(fd)){
@@ -147,85 +169,31 @@ int main(int argc, char *argv[])
 				readBytes = fread(shared_mem.buffer,1,CHUNK_SIZE,fd);
 				fseek(fd,readBytes*(-1),SEEK_CUR);
 
+				printf("BEFORE INVOKE: readBytes: %lu, shared_mem.buffer: %s\n",readBytes,(char*)shared_mem.buffer );
+
 				res = TEEC_InvokeCommand(&sess, CPS, &op, &err_origin);
 
 				if (res != TEEC_SUCCESS)
 					errx(1, "TEEC_InvokeCommand failed with code 0x%x origin 0x%x", res, err_origin);
 
+				printf("AFTER INVOKE: shared_mem.buffer: %s\n",(char*)shared_mem.buffer);
+
 				fwrite(shared_mem.buffer,1,readBytes,fd);
-				printf("ftell(fd) = %lu\n",ftell(fd));
 
 			}
 
 			closeFile(fd);
 			break;
 
-		case CPS_VIEW:	//invoke show()
-			printf("case : %s\n",argv[1]);
-			if(strcmp(argv[2],SCPS_VIEW_RAW) == 0){
-				CPS = CPS_VIEW_RAW;
-				show();
-			}
-			else if(strcmp(argv[2],SCPS_VIEW_ASCII) == 0){
-				CPS = CPS_VIEW_ASCII;
-				show();
-			}
-			else
-				return -1;
-
-			break;
 		default:
 			printf("default case\n");
 			break;
 	}
 
 
-	switch(CPS){
-		printf("entered switch 2 with CPS=%d\n",CPS );
-		case CPS_PROTECT:
+	if(NULL != shared_mem.buffer)
+		free(shared_mem.buffer);
 
-		// if(NULL == (fd = openFile(lightFilePath,"r+")))
-		// 	return -1;
-    //
-		// size_t lastByte = getLastByteFromFile(fd);
-    //
-		// while(lastByte != ftell(fd)){
-		// 	memset(shared_mem.buffer,0,CHUNK_SIZE);
-		// 	readBytes = fread(shared_mem.buffer,1,CHUNK_SIZE,fd);
-		// 	fseek(fd,readBytes*(-1),SEEK_CUR);
-    //
-		// 	res = TEEC_InvokeCommand(&sess, CPS, &op, &err_origin);
-    //
-		// 	if (res != TEEC_SUCCESS)
-		// 		errx(1, "TEEC_InvokeCommand failed with code 0x%x origin 0x%x", res, err_origin);
-    //
-		// 	fwrite(shared_mem.buffer,1,readBytes,fd);
-		// 	printf("ftell(fd) = %lu\n",ftell(fd));
-    //
-		// }
-    //
-		// closeFile(fd);
-
-		break;
-
-		case CPS_VIEW_RAW:
-		break;
-
-		case CPS_VIEW_ASCII:
-		break;
-
-		// case CPS_INIT:
-		// 	printf("TEEC_InvokeCommand called.\n");
-		// 	res = TEEC_InvokeCommand(&sess, CPS, &op, &err_origin);
-		// 	if (res != TEEC_SUCCESS)
-		// 		errx(1, "TEEC_InvokeCommand failed with code 0x%x origin 0x%x", res, err_origin);
-
-		default:
-			break;
-	}
-
-	if(NULL != buf)
-		free(buf);
 
 	TEEC_ReleaseSharedMemory(&shared_mem);
 	TEEC_CloseSession(&sess);
@@ -274,10 +242,6 @@ static size_t getLastByteFromFile(FILE* fd){
 	return lastByte;
 }
 
-static void show(){
-	printf("show() called\n");
-	return;
-}
 
 static int isFileEmpty(){
 	int size;
