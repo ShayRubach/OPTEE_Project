@@ -86,14 +86,16 @@ int main(int argc, char *argv[])
 	uint32_t err_origin;
 	enum CPS_TYPE CPS;
 	size_t readBytes = 0;
+	char* file_name = NULL;
 
 	// validate input
-	if(INVALID_ARGS == (validateArgs(argc)))
-		return INPUT_ERROR;
+	//if(INVALID_ARGS == (validateArgs(argc)))
+	//	return INPUT_ERROR;
 	if(CPS_INVALID_OPERATION == (	CPS = etoi(argv[1])))
 		return INPUT_ERROR;
 
-	fillFilesWithData();
+	//TODO: REMOVE
+	//fillFilesWithData();
 
 
 	shared_mem.buffer = (char*)malloc(CHUNK_SIZE);
@@ -129,7 +131,9 @@ int main(int argc, char *argv[])
 
 	printf("CPS: %d\n",CPS);
 	switch (CPS) {
+		size_t lastByte = 0;
 		case CPS_INIT:	//set password
+
 			printf("case : %s\n",argv[1]);
 
 			memset(shared_mem.buffer,0,CHUNK_SIZE);
@@ -142,6 +146,13 @@ int main(int argc, char *argv[])
 			break;
 
 		case CPS_VIEW:	//invoke show()
+			file_name = argv[3];
+			if(NULL == (fd = openFile(file_name,"r+")))
+				return -1;
+
+			printFile(fd);
+			lastByte = getLastByteFromFile(fd);
+
 			printf("case : %s\n",argv[1]);
 			if(strcmp(argv[2],SCPS_VIEW_RAW) == 0){
 				CPS = CPS_VIEW_RAW;
@@ -154,19 +165,9 @@ int main(int argc, char *argv[])
 				return INPUT_ERROR;
 			}
 
-		case CPS_PROTECT: //pass a msg
-
-			printf("case : %s\n",argv[1]);
-			if(NULL == (fd = openFile(lightFilePath,"r+")))
-				return -1;
-
-			printFile(fd);
-			size_t lastByte = getLastByteFromFile(fd);
-
 			while(lastByte != ftell(fd)){
 				memset(shared_mem.buffer,0,CHUNK_SIZE);
 				readBytes = fread(shared_mem.buffer,1,CHUNK_SIZE,fd);
-				fseek(fd,readBytes*(-1),SEEK_CUR);
 
 				printf("BEFORE INVOKE: readBytes: %lu, shared_mem.buffer: %s\n",readBytes,(char*)shared_mem.buffer );
 
@@ -177,8 +178,45 @@ int main(int argc, char *argv[])
 					errx(1, "TEEC_InvokeCommand failed with code 0x%x origin 0x%x", res, err_origin);
 
 				printf("AFTER INVOKE: shared_mem.buffer: %s\n",(char*)shared_mem.buffer);
+			}
 
-				fwrite(shared_mem.buffer,1,readBytes,fd);
+
+			closeFile(fd);
+			break;
+
+		case CPS_PROTECT: //pass a msg
+			file_name = argv[2];
+			printf("case : %s\n",argv[1]);
+
+			if(NULL == (fd = openFile(file_name,"r+")))
+				return -1;
+
+			printFile(fd);
+			lastByte = getLastByteFromFile(fd);
+
+			while(lastByte > ftell(fd)){
+				memset(shared_mem.buffer,0,CHUNK_SIZE);
+				readBytes = fread(shared_mem.buffer,1,CHUNK_SIZE,fd);
+				fseek(fd,readBytes*(-1),SEEK_CUR);
+
+				printf("___BEFORE INVOKE: readBytes: %lu, shared_mem.buffer: %s\n",readBytes,(char*)shared_mem.buffer );
+
+
+				res = TEEC_InvokeCommand(&sess, CPS, &op, &err_origin);
+
+				if (res != TEEC_SUCCESS)
+					errx(1, "TEEC_InvokeCommand failed with code 0x%x origin 0x%x", res, err_origin);
+
+				printf("___AFTERR INVOKE: shared_mem.buffer: %s\n",(char*)shared_mem.buffer);
+
+				// if(readBytes > 0 && readBytes < CHUNK_SIZE){
+				// 	for (size_t i = readBytes ; i < CHUNK_SIZE; i++) {
+				// 		((char*)shared_mem.buffer)[i] = ' ';
+				// 	}
+				// 	//((char*)shared_mem.buffer)[CHUNK_SIZE-1] = '\0';
+				// }
+
+				fwrite(shared_mem.buffer,1,CHUNK_SIZE,fd);
 
 			}
 
@@ -212,10 +250,10 @@ static int validateArgs(int argc){
 	return res;
 }
 
-static FILE* openFile(const char* filePath,const char* mode){
+static FILE* openFile(const char* file_name,const char* mode){
 
-	printf("opening file %s , with mode: %s\n",filePath,mode);
-	fd = fopen(filePath,mode);
+	printf("opening file %s , with mode: %s\n",file_name,mode);
+	fd = fopen(file_name,mode);
 	if(fd != NULL)
 		printf("file opened successfully.\n");
 	else
@@ -236,10 +274,11 @@ static int closeFile(FILE* fd){
 }
 
 static size_t getLastByteFromFile(FILE* fd){
+	size_t curr_byte = ftell(fd);
 	fseek(fd,0,SEEK_END);
-	size_t lastByte = ftell(fd);
-	fseek(fd,0,SEEK_SET);
-	return lastByte;
+	size_t last_byte = ftell(fd);
+	fseek(fd,0,curr_byte);
+	return last_byte;
 }
 
 

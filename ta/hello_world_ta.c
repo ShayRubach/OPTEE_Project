@@ -134,11 +134,6 @@ static TEE_Result hashBufferWithSHA1(
 	        return ret;
 	  }
 
-		// IMSG("BEFORE DIGEST DO FINAL");
-		// for(int i=0 ; i < keyBuflen ; i++){
-		// 	IMSG("keyBuf[i] = %02x",keyBuf[i]);
-		// }
-		//TEE_DigestUpdate(hashedHandle,keyBuf,keyBuflen);
 		ret = TEE_DigestDoFinal(hashedHandle,keyBuf,keyBuflen,hashedKeyBuf,hashedKeyLen);
 	  if(ret != TEE_SUCCESS) {
 			IMSG("TEE_DigestDoFinal returned (%08x).",ret);
@@ -252,7 +247,7 @@ static TEE_Result setAttribute(TEE_Attribute* aesAttributes, uint32_t id,char* h
 }
 
 
-static TEE_Result decryptWithPrivateKey(uint32_t param_types, TEE_Param params[4]) {
+static TEE_Result decryptWithPrivateKey(uint32_t param_types, TEE_Param params[4],enum CPS_TYPE VIEW_MODE) {
 
 		TEE_Attribute aesAttributes;
 		uint32_t i,read_bytes;
@@ -269,6 +264,8 @@ static TEE_Result decryptWithPrivateKey(uint32_t param_types, TEE_Param params[4
 		i =0;i=i;
 		TEE_MemFill((char*)hashedKeyBuf,0,hkbSize);
 
+		VIEW_MODE = VIEW_MODE;
+
 		IMSG("%s: enc ascii\n",fn);
 		for(i=0;i<16;++i){
 			IMSG("%c , ",((char*)params[1].memref.buffer)[i]);
@@ -279,11 +276,16 @@ static TEE_Result decryptWithPrivateKey(uint32_t param_types, TEE_Param params[4
 			IMSG("%x , ",((char*)params[1].memref.buffer)[i]);
 		}
 
+
+		//open the private key object
 		IMSG("createAndOpenObject called.\n");
 		if((createAndOpenObject(objID, objID_len, flags,NULL,16,OPEN_ONLY)) == -1){
 			IMSG("Couldn't open object!");
 			return TEE_ERROR_ITEM_NOT_FOUND;
 		}
+
+		//open the object to be holding the decrypted data
+		//result = createAndOpenObject(objID, objID_len, flags,hashedKeyBuf,16,CREATE_AND_OPEN);
 
 		IMSG("TEE_ReadObjectData called.\n");
 		if((TEE_ReadObjectData(object, hashedKeyBuf, hkbSize, &read_bytes)) != TEE_SUCCESS) {
@@ -337,12 +339,12 @@ static TEE_Result decryptWithPrivateKey(uint32_t param_types, TEE_Param params[4
 
 		IMSG("%s: dec ascii\n",fn);
 		for(i=0;i<16;++i){
-			IMSG("%c , ",((char*)params[1].memref.buffer)[i]);
+			IMSG("%c",((char*)params[1].memref.buffer)[i]);
 		}
 
 		IMSG("%s: dec hex\n",fn);
 		for(i=0;i<16;++i){
-			IMSG("%x , ",((char*)params[1].memref.buffer)[i]);
+			IMSG("%x",((char*)params[1].memref.buffer)[i]);
 		}
 		TEE_FreeOperation(handle);
 		TEE_FreeTransientObject(key);
@@ -433,12 +435,6 @@ static TEE_Result encryptWithPrivateKey(uint32_t param_types, TEE_Param params[4
 	IMSG("TEE_CipherDoFinal called.\n");
 	TEE_CipherDoFinal(handle,params[1].memref.buffer,16,params[1].memref.buffer,&(sz));
 
-	// IMSG("PRINTING ENCRYPTED DATA:\n");
-	// for (i=0; i< 16; i++) {
-	// 	IMSG("i = %d ,encrypted data=%x, ",i,((char*)params[1].memref.buffer)[i]);
-	// }
-
-
 	IMSG("%s: enc ascii\n",fn);
 	for(i=0;i<16;++i){
 		IMSG("%c , ",((char*)params[1].memref.buffer)[i]);
@@ -448,7 +444,6 @@ static TEE_Result encryptWithPrivateKey(uint32_t param_types, TEE_Param params[4
 	for(i=0;i<16;++i){
 		IMSG("%x , ",((char*)params[1].memref.buffer)[i]);
 	}
-
 
 	TEE_FreeOperation(handle);
 	TEE_FreeTransientObject(key);
@@ -489,10 +484,10 @@ TEE_Result TA_InvokeCommandEntryPoint(void __maybe_unused *sess_ctx,
 			return encryptWithPrivateKey(param_types,params);
 		case CPS_VIEW_RAW: //CRYPT_DECRYPT RAW:
 			IMSG("OPERATION: decrypt(raw) | buffer: %s\n",buf);
-			return decryptWithPrivateKey(param_types, params);
+			return decryptWithPrivateKey(param_types, params,CPS_VIEW_RAW);
 		case CPS_VIEW_ASCII: //CRYPT_DECRYPT ASCII:
 			IMSG("OPERATION: decrypt(ascii) | buffer: %s\n",buf);
-			return decryptWithPrivateKey(param_types, params);
+			return decryptWithPrivateKey(param_types, params,CPS_VIEW_ASCII);
 
 		default:
 			IMSG("OPERATION: TEE_ERROR_BAD_PARAMETERS | buffer: %s\n",buf);
