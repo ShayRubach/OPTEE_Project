@@ -255,15 +255,15 @@ static int isFileEmpty(){
 }
 
 static void fillFilesWithData(){
-	fd = openFile(lightFilePath,"w+");
+	fd = openFile(lightFilePath,"a");
 	if(1 == isFileEmpty(fd)){
 		printf("filling file '%s' with random data\n",lightFilePath );
 		fprintf(fd,"%s",light_data);
 	}
-	
+
 	closeFile(fd);
 
-	fd = openFile(heavyFilePath,"w+");
+	fd = openFile(heavyFilePath,"a");
 	if(1 == isFileEmpty(fd)){
 		printf("filling file '%s' with random data\n",heavyFilePath );
 		fprintf(fd,"%s",heavy_data);
