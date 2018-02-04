@@ -49,8 +49,7 @@
 #define SCPS_VIEW_ASCII		"ascii"
 
 static FILE* fd = NULL;
-static const char* lightFilePath = "lightFile";
-static const char* heavyFilePath = "heavyFile";
+
 
 enum CPS_TYPE {
 	CPS_INIT = 1,
@@ -61,19 +60,11 @@ enum CPS_TYPE {
 	CPS_INVALID_OPERATION
 };
 
-static int 		validateArgs(int argc);														//check for invalid args count
 static int 		etoi(char* command);															// enum to int
 static int 		closeFile(FILE* fd);															// safe close file
-static void 	fillFilesWithData();															// local data for files
 static FILE* 	openFile(const char* filePath,const char* mode);	// safe open file
 static size_t getLastByteFromFile(FILE* fd);										// get last byte of file
 static void 	printFile(FILE* fd);
-
-//those 2 data strings are to be inserted into the local files, for testings:
-static char* heavy_data = "Both wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper object. 	DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA  ote that tabs and spaces are both treated as whitespace, but they are not equal: the lines are considered to have no common leading whitespace. (This behaviour is new in Python 2.5; older versions of this module incorrectly expanded tabs before searching for common leading whitespace.) Both wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper objectBoth wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper object. 	DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA  ote that tabs and spaces are both treated as whitespace, but they are not equal: the lines are considered to have no common leading whitespace. (This behaviour is new in Python 2.5; older versions of this module incorrectly expanded tabs before searching for common leading whitespace.) Both wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper objectBoth wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper object. 	DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA DATA  ote that tabs and spaces are both treated as whitespace, but they are not equal: the lines are considered to have no common leading whitespace. (This behaviour is new in Python 2.5; older versions of this module incorrectly expanded tabs before searching for common leading whitespace.) Both wrap() and fill() work by creating a TextWrapper instance and calling a single method on it. That instance is not reused, so for applications that wrap/fill many text strings, it will be more efficient for you to create your own TextWrapper object\n";
-
-static char* light_data = "Uncountable nouns are nouns that are either difficult or impossible to count. Uncountable nouns include intangible things (e.g., information, air), liquids (e.g., milk, wine), and things that are too large or numerous to count (e.g., equipment, sand, wood). Because these things can’t be counted, you should never use a or an with them—remember, the indefinite article is only for singular nouns. Uncountable nouns can be modified by words like some, however. Consider the examples below for reference. Water is an uncountable noun and should not be used with the indefinite article.However, if you describe the water in terms of countable units (like bottles), you can use the indefinite article.\n";
-
 
 int main(int argc, char *argv[])
 {
@@ -209,13 +200,6 @@ int main(int argc, char *argv[])
 
 				printf("___AFTERR INVOKE: shared_mem.buffer: %s\n",(char*)shared_mem.buffer);
 
-				// if(readBytes > 0 && readBytes < CHUNK_SIZE){
-				// 	for (size_t i = readBytes ; i < CHUNK_SIZE; i++) {
-				// 		((char*)shared_mem.buffer)[i] = ' ';
-				// 	}
-				// 	//((char*)shared_mem.buffer)[CHUNK_SIZE-1] = '\0';
-				// }
-
 				fwrite(shared_mem.buffer,1,CHUNK_SIZE,fd);
 
 			}
@@ -240,15 +224,6 @@ int main(int argc, char *argv[])
 	return 0;
 }
 
-
-static int validateArgs(int argc){
-	int res = 1;
-	if(argc != 3){
-		printf("ERROR: invalid number of arguments.\n");
-		res = -1;
-	}
-	return res;
-}
 
 static FILE* openFile(const char* file_name,const char* mode){
 
@@ -281,34 +256,6 @@ static size_t getLastByteFromFile(FILE* fd){
 	return last_byte;
 }
 
-
-static int isFileEmpty(){
-	int size;
-	fseek (fd, 0, SEEK_END);
-	size = ftell(fd);
-	if (0 == size) {
-		printf("file is empty\n");
-		return 1;
-	}
-	return 0;
-}
-
-static void fillFilesWithData(){
-	fd = openFile(lightFilePath,"a");
-	if(1 == isFileEmpty(fd)){
-		printf("filling file '%s' with random data\n",lightFilePath );
-		fprintf(fd,"%s",light_data);
-	}
-
-	closeFile(fd);
-
-	fd = openFile(heavyFilePath,"a");
-	if(1 == isFileEmpty(fd)){
-		printf("filling file '%s' with random data\n",heavyFilePath );
-		fprintf(fd,"%s",heavy_data);
-	}
-	closeFile(fd);
-}
 
 void printFile(FILE* fd){
 	char line[512];
