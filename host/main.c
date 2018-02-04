@@ -144,16 +144,15 @@ int main(int argc, char *argv[])
 		case CPS_VIEW:	//invoke show()
 			printf("case : %s\n",argv[1]);
 			if(strcmp(argv[2],SCPS_VIEW_RAW) == 0){
-				//
+				CPS = CPS_VIEW_RAW;
 			}
 			else if(strcmp(argv[2],SCPS_VIEW_ASCII) == 0){
-				//
+				CPS = CPS_VIEW_ASCII;
 			}
 			else{
 				printf("Invalid argument: %s\n",argv[2]);
 				return INPUT_ERROR;
 			}
-
 
 		case CPS_PROTECT: //pass a msg
 
@@ -171,6 +170,7 @@ int main(int argc, char *argv[])
 
 				printf("BEFORE INVOKE: readBytes: %lu, shared_mem.buffer: %s\n",readBytes,(char*)shared_mem.buffer );
 
+				printf("About to InvokeCommand with CPS=%d\n",CPS );
 				res = TEEC_InvokeCommand(&sess, CPS, &op, &err_origin);
 
 				if (res != TEEC_SUCCESS)
@@ -260,6 +260,7 @@ static void fillFilesWithData(){
 		printf("filling file '%s' with random data\n",lightFilePath );
 		fprintf(fd,"%s",light_data);
 	}
+	
 	closeFile(fd);
 
 	fd = openFile(heavyFilePath,"w+");
