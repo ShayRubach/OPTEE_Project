@@ -14,6 +14,12 @@ Disclaimer
 
 How to run
 ==========
+FIRST: 
+- mkdir 'crypto' on your devel/optee/optee_examples dir and move ALL files (host,ta,Android.mk,Makefile) there .
+- open your optee_examples/Makefile and add 'crypto' to the EXAMPLE_LIST.
+  That should look like that:
+  EXAMPLE_LIST := hello_world random crypto
+
 1. cd to 'optee-examples' dir
 2. run: make optee-examples
 3. run: make run
