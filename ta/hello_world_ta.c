@@ -32,9 +32,13 @@
 #include <string.h>
 #include "hello_world_ta.h"
 #define HASH_KEY_SIZE 16
+#define ERR_KEY_NOT_GENERATED -99
 #define CREATE_AND_OPEN 1
 #define OPEN_ONLY				2
 #define FILE_PATH 			"96c5d1b260aa4de30fedaf67e5b9227613abebff172a2b4e949994b8e561e2fb"
+#define OP_TEE_DEBUG_MODE (0)
+#define OP_TEE_DEBUG if(OP_TEE_DEBUG_MODE == 1)
+
 TEE_ObjectHandle p_storage_obj;
 TEE_ObjectHandle key;
 TEE_ObjectHandle object;	//persistent object holding the enc key
@@ -62,8 +66,7 @@ enum CPS_TYPE {
  */
 TEE_Result TA_CreateEntryPoint(void)
 {
-	DMSG("has been called");
-
+	OP_TEE_DEBUG DMSG("has been called");
 	return TEE_SUCCESS;
 }
 
@@ -73,7 +76,7 @@ TEE_Result TA_CreateEntryPoint(void)
  */
 void TA_DestroyEntryPoint(void)
 {
-	DMSG("has been called");
+	OP_TEE_DEBUG DMSG("has been called");
 }
 
 /*
@@ -91,7 +94,7 @@ TEE_Result TA_OpenSessionEntryPoint(uint32_t param_types,
 							 TEE_PARAM_TYPE_NONE,
 						   TEE_PARAM_TYPE_NONE);
 
-	DMSG("has been called");
+	OP_TEE_DEBUG DMSG("has been called");
 
 	if (param_types != exp_param_types)
 		return TEE_ERROR_BAD_PARAMETERS;
@@ -152,18 +155,18 @@ static int createAndOpenObject(char* objID, size_t objID_len, uint32_t flags, ch
 
 		ret = TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE, (void *)objID, objID_len, flags, &object);
 		if (ret != TEE_SUCCESS && MODE == CREATE_AND_OPEN) {
-			IMSG("Pre TEE_CreatePersistentObject\n");
 			EMSG("TEE_OpenPersistentObject failed.\n");
+			IMSG("Creating new PersistentObject..\n");
 			ret = TEE_CreatePersistentObject(TEE_STORAGE_PRIVATE,
 											(void *)objID, objID_len,
 											TEE_DATA_FLAG_ACCESS_WRITE_META,
 											TEE_HANDLE_NULL, data_buf, size,
 											(TEE_ObjectHandle *)NULL);
-			EMSG("Pre TEE_CreatePersistentObject RET VALUE: %u",ret);
+			OP_TEE_DEBUG IMSG("Pre TEE_CreatePersistentObject RET VALUE: %u",ret);
 			ret = TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE,
 																		(void *)objID, objID_len,
 																		flags, &object);
-			EMSG("Pre TEE_OpenPersistentObject RET VALUE: %u",ret);
+			OP_TEE_DEBUG IMSG("Pre TEE_OpenPersistentObject RET VALUE: %u",ret);
 			return -1;
 		}
 		if (ret == TEE_SUCCESS && MODE == CREATE_AND_OPEN) {
@@ -171,11 +174,11 @@ static int createAndOpenObject(char* objID, size_t objID_len, uint32_t flags, ch
 			return -2;
 		}
 		else if(ret != TEE_SUCCESS && MODE == OPEN_ONLY){
-				EMSG("Generate a key first.\n");
-				return 0;
+			EMSG("Generate a key first.\n");
+			return 0;
 		}
 		else {
-			EMSG("TEE_OpenPersistentObject succeed!.\n");
+			OP_TEE_DEBUG  IMSG("TEE_OpenPersistentObject succeed!.\n");
 		}
 		return 1;
 }
@@ -196,8 +199,8 @@ static int hashUserKey(uint32_t param_types, TEE_Param params[4])
 	params = params;
 	strLen = 0; strLen = strLen;
 	param_types = param_types;
-	IMSG("Entered: hashUserKey \n");
-	IMSG("params[1].memref.size= %d",params[1].memref.size);
+	OP_TEE_DEBUG IMSG("hashUserKey called. \n");
+	OP_TEE_DEBUG IMSG("params[1].memref.size= %d",params[1].memref.size);
 	keyBuf = TEE_Malloc(params[1].memref.size,0);
 	TEE_MemMove(keyBuf,(char*)(params[1].memref.buffer),params[1].memref.size);
 	strLen = params[1].memref.size;
@@ -215,22 +218,16 @@ static int hashUserKey(uint32_t param_types, TEE_Param params[4])
 	TEE_GetObjectInfo(object, &info);
 	p = TEE_Malloc(HASH_KEY_SIZE, 0);
 
-	IMSG("TEE_ReadObjectData2 called.\n");
+	OP_TEE_DEBUG IMSG("TEE_ReadObjectData2 called.\n");
 	ret = TEE_ReadObjectData(object, p, 16, &read_bytes);
 	if (ret != TEE_SUCCESS) {
 		EMSG("TEE_ReadObjectData2 failed.\n");
 		goto done;
 	}
-	EMSG("Got %d bytes of data:%s\n", read_bytes, (char*)p);
-
-	for (uint32_t i = 0; i < HASH_KEY_SIZE ; ++i){
-		IMSG("HASHED KEY ====>  p[%d]=%02x ",i, p[i]);
-	}
+	OP_TEE_DEBUG IMSG("Got %d bytes of data:%s\n", read_bytes, (char*)p);
 
 done:
-	// TEE_CloseAndDeletePersistentObject(object);
-	// IMSG("Persistent Object has been delete.\n");
-	IMSG("Closing Persisten Object..\n");
+	OP_TEE_DEBUG IMSG("Closing Persisten Object..\n");
 	TEE_CloseObject(object);
 
 	return status;
@@ -255,7 +252,7 @@ static TEE_Result decryptWithPrivateKey(uint32_t param_types, TEE_Param params[4
 		size_t hkbSize = 16;
 		size_t objID_len = 64;
 		char* hashedKeyBuf = TEE_Malloc(16, 0);
-		char fn[] = "decryptWithPrivateKey";
+		//char fn[] = "decryptWithPrivateKey";
 		char objID[] = FILE_PATH;
 		uint32_t flags = TEE_DATA_FLAG_ACCESS_WRITE_META | TEE_DATA_FLAG_ACCESS_READ | TEE_DATA_FLAG_ACCESS_WRITE;
 		param_types = param_types;
@@ -264,88 +261,74 @@ static TEE_Result decryptWithPrivateKey(uint32_t param_types, TEE_Param params[4
 		i =0;i=i;
 		TEE_MemFill((char*)hashedKeyBuf,0,hkbSize);
 
-		VIEW_MODE = VIEW_MODE;
-
-		IMSG("%s: enc ascii\n",fn);
-		for(i=0;i<16;++i){
-			IMSG("%c , ",((char*)params[1].memref.buffer)[i]);
+		OP_TEE_DEBUG IMSG("createAndOpenObject called.\n");
+		if((createAndOpenObject(objID, objID_len, flags,NULL,16,OPEN_ONLY)) == 0){
+			EMSG("Generate a key first.");
+			return ERR_KEY_NOT_GENERATED;
 		}
 
-		IMSG("%s: enc hex\n",fn);
-		for(i=0;i<16;++i){
-			IMSG("%x , ",((char*)params[1].memref.buffer)[i]);
-		}
-
-
-		//open the private key object
-		IMSG("createAndOpenObject called.\n");
-		if((createAndOpenObject(objID, objID_len, flags,NULL,16,OPEN_ONLY)) == -1){
-			IMSG("Couldn't open object!");
-			return TEE_ERROR_ITEM_NOT_FOUND;
-		}
-
-		//open the object to be holding the decrypted data
-		//result = createAndOpenObject(objID, objID_len, flags,hashedKeyBuf,16,CREATE_AND_OPEN);
-
-		IMSG("TEE_ReadObjectData called.\n");
+		OP_TEE_DEBUG IMSG("TEE_ReadObjectData called.\n");
 		if((TEE_ReadObjectData(object, hashedKeyBuf, hkbSize, &read_bytes)) != TEE_SUCCESS) {
 			EMSG("TEE_ReadObjectData failed.\n");
 		}
 
-		IMSG("setAttribute called.\n");
+		OP_TEE_DEBUG IMSG("setAttribute called.\n");
 		setAttribute(&aesAttributes,TEE_ATTR_SECRET_VALUE,hashedKeyBuf,hkbSize);
 
-		IMSG("TEE_AllocateTransientObject called.\n");
+		OP_TEE_DEBUG IMSG("TEE_AllocateTransientObject called.\n");
 		res = TEE_AllocateTransientObject(TEE_TYPE_AES, 128, &key);
 		if (res != TEE_SUCCESS) {
-			IMSG("TEE_AllocateTransientObject returned (%08x).",res);
+			EMSG("TEE_AllocateTransientObject returned (%08x).",res);
 			return res;
 		}
 
-		IMSG("TEE_ResetTransientObject called.\n");
+		OP_TEE_DEBUG IMSG("TEE_ResetTransientObject called.\n");
 		TEE_ResetTransientObject(key);
 
-		IMSG("TEE_PopulateTransientObject called.\n");
+		OP_TEE_DEBUG IMSG("TEE_PopulateTransientObject called.\n");
 		TEE_PopulateTransientObject(key, (TEE_Attribute *)&aesAttributes, 1);
 
-		IMSG("TEE_GetObjectInfo called.\n");
+		OP_TEE_DEBUG IMSG("TEE_GetObjectInfo called.\n");
 	  TEE_GetObjectInfo(key, &key_info);
 
 
-		IMSG("TEE_AllocateOperation called.\n");
+		OP_TEE_DEBUG IMSG("TEE_AllocateOperation called.\n");
 		if((TEE_AllocateOperation(&handle, TEE_ALG_AES_CBC_NOPAD, TEE_MODE_DECRYPT, 128)) != TEE_SUCCESS ) {
-	        IMSG("TEE_AllocateOperation failed.\n");
+	        EMSG("TEE_AllocateOperation failed.\n");
 	        TEE_FreeTransientObject(key);
 	        return TEE_ERROR_ITEM_NOT_FOUND;
 	  }
 
-		IMSG("TEE_SetOperationKey called.\n");
+		OP_TEE_DEBUG IMSG("TEE_SetOperationKey called.\n");
 		if((TEE_SetOperationKey(handle,key)) != TEE_SUCCESS) {
-			IMSG("TEE_SetOperationKey failed.\n");
+			EMSG("TEE_SetOperationKey failed.\n");
 			return TEE_ERROR_ITEM_NOT_FOUND;
 	  }
 
-		IMSG("TEE_CipherInit called.\n");
+		OP_TEE_DEBUG IMSG("TEE_CipherInit called.\n");
 		TEE_CipherInit(handle,iv,iv_len);
 
 		//sz = sizeof(out);
 		sz= 16;
 
 
-		IMSG("TEE_CipherDoFinal called.\n");
+		OP_TEE_DEBUG IMSG("TEE_CipherDoFinal called.\n");
 		TEE_CipherDoFinal(handle,params[1].memref.buffer,16,params[1].memref.buffer,&(sz));
 
 
 
-		IMSG("%s: dec ascii\n",fn);
-		for(i=0;i<16;++i){
-			IMSG("%c",((char*)params[1].memref.buffer)[i]);
+		if(VIEW_MODE == CPS_VIEW_RAW){
+			for(i=0;i<16;++i){
+				IMSG("%x",((char*)params[1].memref.buffer)[i]);
+			}
 		}
 
-		IMSG("%s: dec hex\n",fn);
-		for(i=0;i<16;++i){
-			IMSG("%x",((char*)params[1].memref.buffer)[i]);
+		if(VIEW_MODE == CPS_VIEW_ASCII){
+			for(i=0;i<16;++i){
+				IMSG("%c",((char*)params[1].memref.buffer)[i]);
+			}
 		}
+
 		TEE_FreeOperation(handle);
 		TEE_FreeTransientObject(key);
 		TEE_CloseObject(object);
@@ -369,81 +352,70 @@ static TEE_Result encryptWithPrivateKey(uint32_t param_types, TEE_Param params[4
 	i = 0; i=i;
 	object = TEE_HANDLE_NULL;
 
-	IMSG("%s called.\n",fn);
-
-	IMSG("%s: clear ascii\n",fn);
-	for(i=0;i<16;++i){
-		IMSG("%c , ",((char*)params[1].memref.buffer)[i]);
-	}
-
-	IMSG("%s: clear hex\n",fn);
-	for(i=0;i<16;++i){
-		IMSG("%x , ",((char*)params[1].memref.buffer)[i]);
-	}
-
+	OP_TEE_DEBUG IMSG("%s called.\n",fn);
 
 	TEE_MemFill((char*)hashedKeyBuf,0,hkbSize);
 
-	IMSG("createAndOpenObject called.\n");
-	if((createAndOpenObject(objID, objID_len, flags,NULL,16,OPEN_ONLY)) == -1){
-		IMSG("Couldn't open object!");
-		return TEE_ERROR_ITEM_NOT_FOUND;
+	OP_TEE_DEBUG IMSG("createAndOpenObject called.\n");
+	if((createAndOpenObject(objID, objID_len, flags,NULL,16,OPEN_ONLY)) == 0){
+		EMSG("Couldn't open object!");
+		return ERR_KEY_NOT_GENERATED;
 	}
 
-	IMSG("TEE_ReadObjectData called.\n");
+	OP_TEE_DEBUG IMSG("TEE_ReadObjectData called.\n");
 	if((TEE_ReadObjectData(object, hashedKeyBuf, hkbSize, &read_bytes)) != TEE_SUCCESS) {
 		EMSG("TEE_ReadObjectData failed.\n");
 	}
 
-	IMSG("setAttribute called.\n");
+	OP_TEE_DEBUG IMSG("setAttribute called.\n");
 	setAttribute(&aesAttributes,TEE_ATTR_SECRET_VALUE,hashedKeyBuf,hkbSize);
 
-	IMSG("TEE_AllocateTransientObject called.\n");
+	OP_TEE_DEBUG IMSG("TEE_AllocateTransientObject called.\n");
 	res = TEE_AllocateTransientObject(TEE_TYPE_AES, 128, &key);
 	if (res != TEE_SUCCESS) {
-		IMSG("TEE_AllocateTransientObject returned (%08x).",res);
+		EMSG("TEE_AllocateTransientObject returned (%08x).",res);
 		return res;
 	}
 
-	IMSG("TEE_ResetTransientObject called.\n");
+	OP_TEE_DEBUG IMSG("TEE_ResetTransientObject called.\n");
 	TEE_ResetTransientObject(key);
 
-	IMSG("TEE_PopulateTransientObject called.\n");
+	OP_TEE_DEBUG IMSG("TEE_PopulateTransientObject called.\n");
 	TEE_PopulateTransientObject(key, (TEE_Attribute *)&aesAttributes, 1);
 
-	IMSG("TEE_GetObjectInfo called.\n");
+	OP_TEE_DEBUG IMSG("TEE_GetObjectInfo called.\n");
   TEE_GetObjectInfo(key, &key_info);
 
 
-	IMSG("TEE_AllocateOperation called.\n");
+	OP_TEE_DEBUG IMSG("TEE_AllocateOperation called.\n");
 	if((TEE_AllocateOperation(&handle, TEE_ALG_AES_CBC_NOPAD, TEE_MODE_ENCRYPT, 128)) != TEE_SUCCESS ) {
-        IMSG("TEE_AllocateOperation failed.\n");
+        EMSG("TEE_AllocateOperation failed.\n");
         TEE_FreeTransientObject(key);
         return TEE_ERROR_ITEM_NOT_FOUND;
   }
 
-	IMSG("TEE_SetOperationKey called.\n");
+	OP_TEE_DEBUG IMSG("TEE_SetOperationKey called.\n");
 	if((TEE_SetOperationKey(handle,key)) != TEE_SUCCESS) {
-		IMSG("TEE_SetOperationKey failed.\n");
+		EMSG("TEE_SetOperationKey failed.\n");
 		return TEE_ERROR_ITEM_NOT_FOUND;
   }
 
-	IMSG("TEE_CipherInit called.\n");
+	OP_TEE_DEBUG IMSG("TEE_CipherInit called.\n");
 	TEE_CipherInit(handle,iv,iv_len);
 
 	sz= 16;
-	IMSG("TEE_CipherDoFinal called.\n");
+	OP_TEE_DEBUG IMSG("TEE_CipherDoFinal called.\n");
 	TEE_CipherDoFinal(handle,params[1].memref.buffer,16,params[1].memref.buffer,&(sz));
 
-	IMSG("%s: enc ascii\n",fn);
-	for(i=0;i<16;++i){
-		IMSG("%c , ",((char*)params[1].memref.buffer)[i]);
-	}
-
-	IMSG("%s: enc hex\n",fn);
-	for(i=0;i<16;++i){
-		IMSG("%x , ",((char*)params[1].memref.buffer)[i]);
-	}
+	// IMSG("%s: enc ascii\n",fn);
+	// for(i=0;i<16;++i){
+	// 	IMSG("%c , ",((char*)params[1].memref.buffer)[i]);
+	// }
+  //
+	// IMSG("%s: enc hex\n",fn);
+	// for(i=0;i<16;++i){
+	// 	IMSG("%x , ",((char*)params[1].memref.buffer)[i]);
+	// }
 
 	TEE_FreeOperation(handle);
 	TEE_FreeTransientObject(key);
@@ -470,31 +442,32 @@ TEE_Result TA_InvokeCommandEntryPoint(void __maybe_unused *sess_ctx,
 
 		case CPS_INIT: //CRYPT_SET_PASS:
 
-			if(hashUserKey(param_types, params) == 0){
-				//print hashed key
-				IMSG("OPERATION: Set password | buffer: \n");
-				for (uint32_t i = 0; i < params[1].memref.size; i++){
-					IMSG("i=%d , keyBuf[i]:%02x ", i,keyBuf[i]);
-				}
+			 if(hashUserKey(param_types, params) == 0){
+
+			// 	//print hashed key
+			// 	IMSG("OPERATION: Set password | buffer: \n");
+			// 	for (uint32_t i = 0; i < params[1].memref.size; i++){
+			// 		IMSG("i=%d , keyBuf[i]:%02x ", i,keyBuf[i]);
+			// 	}
 			}
 
 			return TEE_SUCCESS;
 		case CPS_PROTECT: //CRYPT_ENCRYPT:
-			IMSG("OPERATION: encrypt | buffer: %s\n",buf);
+			OP_TEE_DEBUG IMSG("OPERATION: encrypt | buffer: %s\n",buf);
 			return encryptWithPrivateKey(param_types,params);
 		case CPS_VIEW_RAW: //CRYPT_DECRYPT RAW:
-			IMSG("OPERATION: decrypt(raw) | buffer: %s\n",buf);
+			OP_TEE_DEBUG IMSG("OPERATION: decrypt(raw) | buffer: %s\n",buf);
 			return decryptWithPrivateKey(param_types, params,CPS_VIEW_RAW);
 		case CPS_VIEW_ASCII: //CRYPT_DECRYPT ASCII:
-			IMSG("OPERATION: decrypt(ascii) | buffer: %s\n",buf);
+			OP_TEE_DEBUG IMSG("OPERATION: decrypt(ascii) | buffer: %s\n",buf);
 			return decryptWithPrivateKey(param_types, params,CPS_VIEW_ASCII);
 
 		default:
-			IMSG("OPERATION: TEE_ERROR_BAD_PARAMETERS | buffer: %s\n",buf);
+			OP_TEE_DEBUG IMSG("OPERATION: TEE_ERROR_BAD_PARAMETERS | buffer: %s\n",buf);
 			return TEE_ERROR_BAD_PARAMETERS;
 	}
 
 	TEE_CloseAndDeletePersistentObject(object);
-	IMSG("Persistent Object has been delete.\n");
+	OP_TEE_DEBUG IMSG("Persistent Object has been delete.\n");
 	return TEE_SUCCESS;
 }

@@ -38,9 +38,12 @@
 
 #define REF_OFFSET				(0)
 #define CHUNK_SIZE				(16)
+#define ERROR_KEY_NOT_GENERATED (-99)
 #define INVALID_ARGS			(-1)
 #define INPUT_ERROR				(-1)
 
+#define OP_TEE_DEBUG_MODE (0)
+#define OP_TEE_DEBUG if(OP_TEE_DEBUG_MODE == 1)
 
 #define SCPS_INIT					"CPS_INIT"
 #define SCPS_PROTECT			"CPS_PROTECT"
@@ -85,9 +88,6 @@ int main(int argc, char *argv[])
 	if(CPS_INVALID_OPERATION == (	CPS = etoi(argv[1])))
 		return INPUT_ERROR;
 
-	//TODO: REMOVE
-	//fillFilesWithData();
-
 
 	shared_mem.buffer = (char*)malloc(CHUNK_SIZE);
 	shared_mem.size = CHUNK_SIZE;
@@ -106,34 +106,36 @@ int main(int argc, char *argv[])
 	op.params[1].memref.size = shared_mem.size;
 	op.params[1].memref.offset = REF_OFFSET;
 
-	printf("TEEC_InitializeContext called.\n");
+	OP_TEE_DEBUG printf("TEEC_InitializeContext called.\n");
 	res = TEEC_InitializeContext(NULL, &ctx);
 	if ( res != TEEC_SUCCESS)
 		errx(1, "TEEC_InitializeContext failed with code 0x%x", res);
 
-	printf("TEEC_OpenSession called.\n");
+	OP_TEE_DEBUG printf("TEEC_OpenSession called.\n");
 	res = TEEC_OpenSession(&ctx, &sess, &uuid, TEEC_LOGIN_PUBLIC, NULL, NULL, &err_origin);
 	if(res != TEEC_SUCCESS)
 		errx(1, "TEEC_Opensession failed with code 0x%x origin 0x%x", res, err_origin);
 
 
-	printf("TEEC_RegisterSharedMemory called.\n");
+	OP_TEE_DEBUG printf("TEEC_RegisterSharedMemory called.\n");
 	TEEC_RegisterSharedMemory(&ctx,&shared_mem);
 
-	printf("CPS: %d\n",CPS);
+
 	switch (CPS) {
 		size_t lastByte = 0;
 		case CPS_INIT:	//set password
 
-			printf("case : %s\n",argv[1]);
+			OP_TEE_DEBUG printf("case : %s\n",argv[1]);
 
 			memset(shared_mem.buffer,0,CHUNK_SIZE);
 			strncpy(shared_mem.buffer,argv[2],strlen(argv[2]));
 
-			printf("TEEC_InvokeCommand called.\n");
+			OP_TEE_DEBUG printf("TEEC_InvokeCommand called.\n");
 			res = TEEC_InvokeCommand(&sess, CPS, &op, &err_origin);
-			if (res != TEEC_SUCCESS)
-					errx(1, "TEEC_InvokeCommand failed with code 0x%x origin 0x%x", res, err_origin);
+
+			if(res != TEEC_SUCCESS)
+				errx(1, "TEEC_InvokeCommand failed with code 0x%x origin 0x%x", res, err_origin);
+
 			break;
 
 		case CPS_VIEW:	//invoke show()
@@ -141,10 +143,10 @@ int main(int argc, char *argv[])
 			if(NULL == (fd = openFile(file_name,"r+")))
 				return -1;
 
-			printFile(fd);
+			//printFile(fd);
 			lastByte = getLastByteFromFile(fd);
 
-			printf("case : %s\n",argv[1]);
+			OP_TEE_DEBUG printf("case : %s\n",argv[1]);
 			if(strcmp(argv[2],SCPS_VIEW_RAW) == 0){
 				CPS = CPS_VIEW_RAW;
 			}
@@ -159,30 +161,30 @@ int main(int argc, char *argv[])
 			while(lastByte != ftell(fd)){
 				memset(shared_mem.buffer,0,CHUNK_SIZE);
 				readBytes = fread(shared_mem.buffer,1,CHUNK_SIZE,fd);
-
-				printf("BEFORE INVOKE: readBytes: %lu, shared_mem.buffer: %s\n",readBytes,(char*)shared_mem.buffer );
-
-				printf("About to InvokeCommand with CPS=%d\n",CPS );
 				res = TEEC_InvokeCommand(&sess, CPS, &op, &err_origin);
 
-				if (res != TEEC_SUCCESS)
+				if(res != TEEC_SUCCESS){
 					errx(1, "TEEC_InvokeCommand failed with code 0x%x origin 0x%x", res, err_origin);
+					if(res == ERROR_KEY_NOT_GENERATED){
+						printf("Generate a key first.\n");
+					}
 
-				printf("AFTER INVOKE: shared_mem.buffer: %s\n",(char*)shared_mem.buffer);
+					//force out
+					lastByte = ftell(fd);
+				}
 			}
 
-
 			closeFile(fd);
+
 			break;
 
 		case CPS_PROTECT: //pass a msg
 			file_name = argv[2];
-			printf("case : %s\n",argv[1]);
+			OP_TEE_DEBUG printf("case : %s\n",argv[1]);
 
 			if(NULL == (fd = openFile(file_name,"r+")))
 				return -1;
 
-			printFile(fd);
 			lastByte = getLastByteFromFile(fd);
 
 			while(lastByte > ftell(fd)){
@@ -190,17 +192,20 @@ int main(int argc, char *argv[])
 				readBytes = fread(shared_mem.buffer,1,CHUNK_SIZE,fd);
 				fseek(fd,readBytes*(-1),SEEK_CUR);
 
-				printf("___BEFORE INVOKE: readBytes: %lu, shared_mem.buffer: %s\n",readBytes,(char*)shared_mem.buffer );
-
-
 				res = TEEC_InvokeCommand(&sess, CPS, &op, &err_origin);
 
-				if (res != TEEC_SUCCESS)
+				if(res != TEEC_SUCCESS){
 					errx(1, "TEEC_InvokeCommand failed with code 0x%x origin 0x%x", res, err_origin);
+					if(res == ERROR_KEY_NOT_GENERATED){
+						printf("Generate a key first.\n");
+					}
 
-				printf("___AFTERR INVOKE: shared_mem.buffer: %s\n",(char*)shared_mem.buffer);
-
-				fwrite(shared_mem.buffer,1,CHUNK_SIZE,fd);
+					//force out
+					lastByte = ftell(fd);
+				}
+				else{
+					fwrite(shared_mem.buffer,1,CHUNK_SIZE,fd);
+				}
 
 			}
 
@@ -208,7 +213,7 @@ int main(int argc, char *argv[])
 			break;
 
 		default:
-			printf("default case\n");
+			OP_TEE_DEBUG printf("default case\n");
 			break;
 	}
 
@@ -227,24 +232,28 @@ int main(int argc, char *argv[])
 
 static FILE* openFile(const char* file_name,const char* mode){
 
-	printf("opening file %s , with mode: %s\n",file_name,mode);
+	OP_TEE_DEBUG printf("opening file %s , with mode: %s\n",file_name,mode);
 	fd = fopen(file_name,mode);
-	if(fd != NULL)
-		printf("file opened successfully.\n");
-	else
+	if(fd != NULL){
+		OP_TEE_DEBUG printf("file opened successfully.\n");
+	}
+	else{
 		printf("failed to open file.\n");
+	}
 	return fd;
 }
 
 static int closeFile(FILE* fd){
 	int ret = -1;
-	printf("closing file.\n");
+	OP_TEE_DEBUG printf("closing file.\n");
 	if(fd != NULL)
 		ret = fclose(fd);
-	if(ret == 0)
-		printf("successfully closed file.\n");
-	else
+	if(ret == 0){
+		OP_TEE_DEBUG printf("successfully closed file.\n");
+	}
+	else{
 		printf("failed to close file.\n");
+	}
 	return ret;
 }
 
@@ -262,7 +271,7 @@ void printFile(FILE* fd){
 	int seek = ftell(fd);
 
 	fseek(fd,0,SEEK_SET);
-	printf("printing file data:\n");
+	OP_TEE_DEBUG printf("printing file data:\n");
 	if(fd != NULL){
 		while(fgets(line,512,fd)){
 			printf("%s\n", line);
@@ -275,7 +284,7 @@ void printFile(FILE* fd){
 }
 
 static int etoi(char* command){
-	printf("command: %s\n", command);
+	OP_TEE_DEBUG printf("command: %s\n", command);
 	if(strcmp(command,SCPS_INIT) == 0)
 		return 1;
 	if(strcmp(command,SCPS_PROTECT) == 0)
