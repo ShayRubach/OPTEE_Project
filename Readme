@@ -15,11 +15,11 @@ Disclaimer
 How to run
 ==========
 1. cd to 'optee-examples' dir
-2. run: make optee_examples
+2. run: make optee-examples
 3. run: make run
 4. wait for the environment to load
 5. on linux terminal type 'c' and press enter
-6. wait for the SecureWorld and NormalWorld to finish their data initialization
+6. wait for the SW and NW to finish their data initialization
 7. in NormalWorld run the follwing sequence: (*)optional
 
 (*) choose a file you wish to test the program with and 'cat' it
