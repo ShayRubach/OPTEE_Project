@@ -15,8 +15,7 @@ Disclaimer
 How to run
 ==========
 1. cd to 'optee-examples' dir
-2. run: 
-'make optee-examples'
+2. run: make optee-examples
 3. run: make run
 4. wait for the environment to load
 5. on linux terminal type 'c' and press enter
