@@ -1,0 +1,125 @@
+IOT Hardware Security with OP_TEE - Shay Rubach (305687352)
+===========================================================
+(c) rights are listed the the bottom of this page.
+
+Disclaimer
+==========
+- Debug prints are turned OFF by default. To activate them, change #define OP_TEE_DEBUG_MODE to '1' in both NW and SW files at the top.
+- The decrypted data print is printed with '\n' between every byte - a little annoying but nothing I could do (API adds it). sorry ;(
+- The chunk size I decided to send between worlds is 16 bytes of size (a bit slow but wtvr)
+- The program supports protection from CPS_VIEW and CPS_PROTECT attempts before CPS_INIT was called. Read SW prints when attempting to do so.
+- There is NO NEED TO SPECIFY FILE SIZE when using the CPS_API. I took care of it in code.
+- Github repo for backup: https://github.com/ShayRubach/OPTEE_Project
+
+
+How to run
+==========
+1. cd to 'optee-examples' dir
+2. run: make optee_examples
+3. run: make run
+4. wait for the environment to load
+5. on linux terminal type 'c' and press enter
+6. wait for the SecureWorld and NormalWorld to finish their data initialization
+7. in NormalWorld run the follwing sequence: (*)optional
+
+(*) choose a file you wish to test the program with and 'cat' it
+	optee_crypto CPS_INIT <$private_key_value>
+	optee_crypto CPS_PROTECT <path_to_file>
+(*) 'cat' the file again to verify data has been encrypted
+	optee_crypto CPS_VIEW <view_mode> <path_to_file>
+
+
+
+Restrictions:
+=============
+<$private_key_value> - max size is (16) bytes 
+<view_mode> 		 - can be either 'raw' or 'ascii' (no capital letters)
+CPS_VIEW			 - will print N sequences of 16 decrypted bytes on the SW for every Invoke (file_size/16 times per [CPS_VIEW] )
+	
+
+
+Sequence execution example:
+===========================
+'file1' contains 21 bytes and the data is a sequence of count from 1 to 20. (123456...20)
+Let 'file1' be the tested file.
+
+Run:
+
+	[Normal World]
+	
+	$> cat file1
+	$> 123456789...20
+	$> optee_crypto CPS_INIT ipwnnoobs
+	$> optee_crypto CPS_PROTECT file1
+	$> cat file1
+	$> $@_52_???_@!!
+	$> optee_crypto CPS_VIEW ascii file1
+
+	
+
+	(!) move to SW.. notice every 16bytes split to a single callback.
+
+	
+
+	[Secure World]
+
+	$> InvokeCommand: CPS_VIEW ascii file1
+	$> 1
+	$> 2
+	$> 3
+	$> 4
+	...
+	$> 15
+	
+	$> InvokeCommand: CPS_VIEW ascii file1
+	$> 16
+	$> 17
+	$> 18
+	$> 19
+	$> 20
+
+
+Suggested files to be tested (system files, built-in TrustZone):
+===============================================================
+etc/protocols
+etc/fb.modes
+
+(*) or u can just run:
+echo 'this is an example for data to be inserted to a new_file' > new_file
+
+and test it on the new_file u created.
+
+
+
+Thanks,
+Shay Rubach.
+
+
+
+
+/*
+ * Copyright (c) 2016, Linaro Limited
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice,
+ * this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
